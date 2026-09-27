@@ -45,6 +45,11 @@ export const usePokerStore = create<PokerStoreState>()(
         if (settings.apiKeys.anthropic) headers['x-anthropic-key'] = settings.apiKeys.anthropic;
         if (settings.apiKeys.openai) headers['x-openai-key'] = settings.apiKeys.openai;
 
+        const customModel = settings.customModels?.[selectedPersonaId as 'gemini' | 'anthropic' | 'openai'];
+        if (customModel) {
+          headers['x-custom-model'] = customModel;
+        }
+
         try {
           const res = await fetch('/api/poker/ai-action', {
             method: 'POST',

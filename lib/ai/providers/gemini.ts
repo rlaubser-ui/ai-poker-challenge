@@ -4,12 +4,13 @@ export async function callGemini(
   prompt: string,
   systemPrompt: string,
   apiKey: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  modelName: string = 'gemini-2.5-flash'
 ): Promise<string> {
   const ai = new GoogleGenAI({ apiKey });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: modelName,
     contents: prompt,
     config: {
       systemInstruction: systemPrompt,

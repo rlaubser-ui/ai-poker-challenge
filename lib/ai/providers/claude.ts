@@ -4,13 +4,14 @@ export async function callClaude(
   prompt: string,
   systemPrompt: string,
   apiKey: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  modelName: string = 'claude-3-5-sonnet-latest'
 ): Promise<string> {
   const anthropic = new Anthropic({ apiKey });
 
   const response = await anthropic.messages.create(
     {
-      model: 'claude-3-5-sonnet-latest',
+      model: modelName,
       max_tokens: 300,
       temperature: 0.3,
       system: systemPrompt,

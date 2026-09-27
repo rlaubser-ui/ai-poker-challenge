@@ -10,6 +10,13 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
+interface ProviderTestState {
+  loading: boolean;
+  valid?: boolean;
+  error?: string;
+  models?: { id: string; name: string }[];
+}
+
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
@@ -23,8 +30,89 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     settings.reasoningVisibility
   );
 
+  const [customModels, setCustomModels] = useState<{
+    gemini?: string;
+    anthropic?: string;
+    openai?: string;
+  }>(settings.customModels || {});
+
+  const [testState, setTestState] = useState<{
+    gemini: ProviderTestState;
+    anthropic: ProviderTestState;
+    openai: ProviderTestState;
+  }>({
+    gemini: { loading: false },
+    anthropic: { loading: false },
+    openai: { loading: false },
+  });
+
   const [showKeys, setShowKeys] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState(false);
+
+  const handleTestKey = async (provider: 'gemini' | 'anthropic' | 'openai') => {
+    const key =
+      provider === 'gemini'
+        ? geminiKey
+        : provider === 'anthropic'
+        ? claudeKey
+        : openaiKey;
+
+    if (!key.trim()) {
+      setTestState((prev) => ({
+        ...prev,
+        [provider]: { loading: false, valid: false, error: 'Please enter an API key first.' },
+      }));
+      return;
+    }
+
+    setTestState((prev) => ({
+      ...prev,
+      [provider]: { loading: true, error: undefined },
+    }));
+
+    try {
+      const res = await fetch('/api/poker/test-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, apiKey: key }),
+      });
+
+      const data = await res.json();
+
+      if (data.valid) {
+        setTestState((prev) => ({
+          ...prev,
+          [provider]: { loading: false, valid: true, models: data.models },
+        }));
+
+        // Set default selected model if not already set
+        if (!customModels[provider] && data.models?.length > 0) {
+          setCustomModels((prev) => ({
+            ...prev,
+            [provider]: data.models[0].id,
+          }));
+        }
+      } else {
+        setTestState((prev) => ({
+          ...prev,
+          [provider]: {
+            loading: false,
+            valid: false,
+            error: data.error || 'Failed to authenticate key.',
+          },
+        }));
+      }
+    } catch (err: any) {
+      setTestState((prev) => ({
+        ...prev,
+        [provider]: {
+          loading: false,
+          valid: false,
+          error: err?.message || 'Network error while testing key.',
+        },
+      }));
+    }
+  };
 
   const handleSave = () => {
     updateSettings({
@@ -33,6 +121,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         gemini: geminiKey.trim() || undefined,
         anthropic: claudeKey.trim() || undefined,
         openai: openaiKey.trim() || undefined,
+      },
+      customModels: {
+        gemini: customModels.gemini || undefined,
+        anthropic: customModels.anthropic || undefined,
+        openai: customModels.openai || undefined,
       },
     });
 
@@ -52,19 +145,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
           <motion.div
-            initial={{ scale: 0.92, opacity: 0 }}
+            initial={{ scale: 0.94, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.92, opacity: 0 }}
-            className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-3xl p-6 shadow-2xl flex flex-col gap-5 text-zinc-200"
+            exit={{ scale: 0.94, opacity: 0 }}
+            className="w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col gap-4 text-zinc-200 max-h-[90vh] overflow-y-auto"
           >
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
               <div className="flex items-center gap-2">
                 <span className="text-xl">⚙️</span>
                 <h2 className="font-extrabold text-lg text-zinc-100">
-                  Settings & API Keys
+                  Settings & AI Models
                 </h2>
               </div>
               <button
@@ -76,7 +169,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             {/* AI Reasoning Visibility */}
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold uppercase tracking-wider text-amber-400">
                 AI Reasoning ("Thinking") Visibility
               </label>
@@ -97,18 +190,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   )
                 )}
               </div>
-              <span className="text-[11px] text-zinc-500">
-                {visibility === 'live' && 'View the AI\'s internal probabilities and calculations in real time.'}
-                {visibility === 'showdown' && 'Reveal the AI\'s reasoning only when cards are revealed at hand completion.'}
-                {visibility === 'hidden' && 'Keep internal reasoning completely hidden like classic poker.'}
-              </span>
             </div>
 
-            {/* API Keys Configuration */}
-            <div className="flex flex-col gap-3">
+            {/* API Keys & Model Selectors */}
+            <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                  Custom Model API Keys (Optional)
+                  Custom Model API Keys & Selection
                 </label>
                 <button
                   type="button"
@@ -119,49 +207,187 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               </div>
 
-              <div className="flex flex-col gap-2">
-                <div>
-                  <span className="text-[11px] text-zinc-400">Gemini API Key:</span>
+              {/* 1. Gemini Key & Model */}
+              <div className="flex flex-col gap-1.5 p-3 rounded-2xl bg-zinc-900/60 border border-zinc-800">
+                <div className="flex items-center justify-between text-xs font-bold text-blue-400">
+                  <span>Gemini API Key</span>
+                  {testState.gemini.valid && (
+                    <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
+                      ✓ Key Verified
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
                   <input
                     type={showKeys ? 'text' : 'password'}
                     placeholder="AIzaSy..."
                     value={geminiKey}
-                    onChange={(e) => setGeminiKey(e.target.value)}
-                    className="w-full mt-1 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs font-mono text-zinc-200 focus:outline-none focus:border-amber-500"
+                    onChange={(e) => {
+                      setGeminiKey(e.target.value);
+                      setTestState((prev) => ({ ...prev, gemini: { loading: false } }));
+                    }}
+                    className="flex-1 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs font-mono text-zinc-200 focus:outline-none focus:border-amber-500"
                   />
+                  <button
+                    type="button"
+                    disabled={testState.gemini.loading || !geminiKey.trim()}
+                    onClick={() => handleTestKey('gemini')}
+                    className="px-3 py-2 rounded-xl bg-blue-900/60 hover:bg-blue-800 border border-blue-500/40 text-blue-200 text-xs font-bold disabled:opacity-40"
+                  >
+                    {testState.gemini.loading ? 'Testing...' : 'Test Key'}
+                  </button>
                 </div>
 
-                <div>
-                  <span className="text-[11px] text-zinc-400">Anthropic Claude Key:</span>
+                {/* Gemini Error Message */}
+                {testState.gemini.error && (
+                  <span className="text-[11px] text-red-400 font-medium">
+                    ✕ {testState.gemini.error}
+                  </span>
+                )}
+
+                {/* Gemini Model Selector */}
+                {testState.gemini.models && (
+                  <div className="mt-1 flex items-center gap-2 pt-2 border-t border-zinc-800/80">
+                    <span className="text-[11px] text-zinc-400">Model:</span>
+                    <select
+                      value={customModels.gemini || testState.gemini.models[0]?.id}
+                      onChange={(e) =>
+                        setCustomModels((prev) => ({ ...prev, gemini: e.target.value }))
+                      }
+                      className="flex-1 bg-zinc-950 border border-zinc-800 text-amber-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500 cursor-pointer"
+                    >
+                      {testState.gemini.models.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Anthropic Claude Key & Model */}
+              <div className="flex flex-col gap-1.5 p-3 rounded-2xl bg-zinc-900/60 border border-zinc-800">
+                <div className="flex items-center justify-between text-xs font-bold text-amber-400">
+                  <span>Anthropic Claude Key</span>
+                  {testState.anthropic.valid && (
+                    <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
+                      ✓ Key Verified
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
                   <input
                     type={showKeys ? 'text' : 'password'}
                     placeholder="sk-ant-..."
                     value={claudeKey}
-                    onChange={(e) => setClaudeKey(e.target.value)}
-                    className="w-full mt-1 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs font-mono text-zinc-200 focus:outline-none focus:border-amber-500"
+                    onChange={(e) => {
+                      setClaudeKey(e.target.value);
+                      setTestState((prev) => ({ ...prev, anthropic: { loading: false } }));
+                    }}
+                    className="flex-1 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs font-mono text-zinc-200 focus:outline-none focus:border-amber-500"
                   />
+                  <button
+                    type="button"
+                    disabled={testState.anthropic.loading || !claudeKey.trim()}
+                    onClick={() => handleTestKey('anthropic')}
+                    className="px-3 py-2 rounded-xl bg-amber-900/60 hover:bg-amber-800 border border-amber-500/40 text-amber-200 text-xs font-bold disabled:opacity-40"
+                  >
+                    {testState.anthropic.loading ? 'Testing...' : 'Test Key'}
+                  </button>
                 </div>
 
-                <div>
-                  <span className="text-[11px] text-zinc-400">OpenAI Key:</span>
+                {testState.anthropic.error && (
+                  <span className="text-[11px] text-red-400 font-medium">
+                    ✕ {testState.anthropic.error}
+                  </span>
+                )}
+
+                {testState.anthropic.models && (
+                  <div className="mt-1 flex items-center gap-2 pt-2 border-t border-zinc-800/80">
+                    <span className="text-[11px] text-zinc-400">Model:</span>
+                    <select
+                      value={customModels.anthropic || testState.anthropic.models[0]?.id}
+                      onChange={(e) =>
+                        setCustomModels((prev) => ({ ...prev, anthropic: e.target.value }))
+                      }
+                      className="flex-1 bg-zinc-950 border border-zinc-800 text-amber-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500 cursor-pointer"
+                    >
+                      {testState.anthropic.models.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. OpenAI Key & Model */}
+              <div className="flex flex-col gap-1.5 p-3 rounded-2xl bg-zinc-900/60 border border-zinc-800">
+                <div className="flex items-center justify-between text-xs font-bold text-emerald-400">
+                  <span>OpenAI Key</span>
+                  {testState.openai.valid && (
+                    <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
+                      ✓ Key Verified
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
                   <input
                     type={showKeys ? 'text' : 'password'}
                     placeholder="sk-..."
                     value={openaiKey}
-                    onChange={(e) => setOpenaiKey(e.target.value)}
-                    className="w-full mt-1 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs font-mono text-zinc-200 focus:outline-none focus:border-amber-500"
+                    onChange={(e) => {
+                      setOpenaiKey(e.target.value);
+                      setTestState((prev) => ({ ...prev, openai: { loading: false } }));
+                    }}
+                    className="flex-1 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs font-mono text-zinc-200 focus:outline-none focus:border-amber-500"
                   />
+                  <button
+                    type="button"
+                    disabled={testState.openai.loading || !openaiKey.trim()}
+                    onClick={() => handleTestKey('openai')}
+                    className="px-3 py-2 rounded-xl bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-500/40 text-emerald-200 text-xs font-bold disabled:opacity-40"
+                  >
+                    {testState.openai.loading ? 'Testing...' : 'Test Key'}
+                  </button>
                 </div>
+
+                {testState.openai.error && (
+                  <span className="text-[11px] text-red-400 font-medium">
+                    ✕ {testState.openai.error}
+                  </span>
+                )}
+
+                {testState.openai.models && (
+                  <div className="mt-1 flex items-center gap-2 pt-2 border-t border-zinc-800/80">
+                    <span className="text-[11px] text-zinc-400">Model:</span>
+                    <select
+                      value={customModels.openai || testState.openai.models[0]?.id}
+                      onChange={(e) =>
+                        setCustomModels((prev) => ({ ...prev, openai: e.target.value }))
+                      }
+                      className="flex-1 bg-zinc-950 border border-zinc-800 text-amber-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500 cursor-pointer"
+                    >
+                      {testState.openai.models.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <p className="text-[10px] text-zinc-500 leading-normal">
-                🔒 Keys are saved strictly in your browser's LocalStorage and sent only for your AI turns. Leave blank to use server environment keys or play offline with Mock Bot.
+                🔒 Keys and selected models are stored securely in your browser's private LocalStorage.
               </p>
             </div>
 
             {/* Bankroll Management */}
             <div className="pt-2 border-t border-zinc-800 flex justify-between items-center">
-              <span className="text-xs text-zinc-400">Bankroll Reset:</span>
+              <span className="text-xs text-zinc-400">Bankroll:</span>
               <button
                 type="button"
                 onClick={handleResetChips}
@@ -171,14 +397,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center gap-3 pt-2">
+            {/* Save Button */}
+            <div className="pt-2">
               <button
                 type="button"
                 onClick={handleSave}
                 className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-zinc-950 font-black text-sm tracking-wide shadow-lg hover:brightness-110 transition-all flex items-center justify-center gap-1.5"
               >
-                {saveFeedback ? '✓ Settings Saved!' : 'Save & Continue'}
+                {saveFeedback ? '✓ Settings & Models Saved!' : 'Save & Continue'}
               </button>
             </div>
           </motion.div>

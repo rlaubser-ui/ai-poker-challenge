@@ -4,13 +4,14 @@ export async function callOpenAI(
   prompt: string,
   systemPrompt: string,
   apiKey: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  modelName: string = 'gpt-4o'
 ): Promise<string> {
   const openai = new OpenAI({ apiKey });
 
   const response = await openai.chat.completions.create(
     {
-      model: 'gpt-4o',
+      model: modelName,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: prompt },

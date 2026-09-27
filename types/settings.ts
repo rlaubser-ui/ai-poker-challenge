@@ -16,4 +16,9 @@ export interface UserSettings {
     anthropic?: string;
     openai?: string;
   };
+  customModels?: {
+    gemini?: string;
+    anthropic?: string;
+    openai?: string;
+  };
 }

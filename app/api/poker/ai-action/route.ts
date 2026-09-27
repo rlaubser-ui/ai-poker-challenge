@@ -68,6 +68,8 @@ export async function POST(req: NextRequest) {
     const persona = getPersonaConfig(personaId);
     const prompt = formatGamePrompt(state, aiIdx);
 
+    const customModel = req.headers.get('x-custom-model') || undefined;
+
     // 3. Enforce 2500ms hard timeout via AbortController
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2500);
@@ -79,21 +81,24 @@ export async function POST(req: NextRequest) {
           prompt,
           persona.systemPrompt,
           apiKey,
-          controller.signal
+          controller.signal,
+          customModel
         );
       } else if (personaId === 'claude') {
         rawOutput = await callClaude(
           prompt,
           persona.systemPrompt,
           apiKey,
-          controller.signal
+          controller.signal,
+          customModel
         );
       } else if (personaId === 'gpt') {
         rawOutput = await callOpenAI(
           prompt,
           persona.systemPrompt,
           apiKey,
-          controller.signal
+          controller.signal,
+          customModel
         );
       } else {
         throw new Error(`Unsupported persona: ${personaId}`);

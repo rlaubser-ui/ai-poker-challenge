@@ -5,7 +5,7 @@ export async function callGemini(
   systemPrompt: string,
   apiKey: string,
   signal?: AbortSignal,
-  modelName: string = 'gemini-2.5-flash'
+  modelName: string = 'gemini-1.5-flash'
 ): Promise<string> {
   const ai = new GoogleGenAI({ apiKey });
 

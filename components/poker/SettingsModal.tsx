@@ -67,7 +67,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     setTestState((prev) => ({
       ...prev,
-      [provider]: { loading: true, error: undefined },
+      [provider]: { loading: true, error: undefined, valid: undefined },
     }));
 
     try {
@@ -85,7 +85,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           [provider]: { loading: false, valid: true, models: data.models },
         }));
 
-        // Set default selected model if not already set
+        // Set default model if not already selected
         if (!customModels[provider] && data.models?.length > 0) {
           setCustomModels((prev) => ({
             ...prev,
@@ -93,12 +93,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           }));
         }
       } else {
+        let rawError = data.error || 'Failed to authenticate key.';
+        try {
+          if (typeof rawError === 'string' && rawError.startsWith('{')) {
+            const parsed = JSON.parse(rawError);
+            rawError = parsed?.error?.message || parsed?.message || rawError;
+          }
+        } catch {}
+
         setTestState((prev) => ({
           ...prev,
           [provider]: {
             loading: false,
             valid: false,
-            error: data.error || 'Failed to authenticate key.',
+            error: rawError,
           },
         }));
       }
@@ -108,7 +116,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         [provider]: {
           loading: false,
           valid: false,
-          error: err?.message || 'Network error while testing key.',
+          error: err?.message || 'Network error while testing connection.',
         },
       }));
     }
@@ -196,7 +204,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                  Custom Model API Keys & Selection
+                  Provider Connection & Model Selection
                 </label>
                 <button
                   type="button"
@@ -207,13 +215,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               </div>
 
-              {/* 1. Gemini Key & Model */}
-              <div className="flex flex-col gap-1.5 p-3 rounded-2xl bg-zinc-900/60 border border-zinc-800">
+              {/* 1. Google Gemini Provider */}
+              <div className="flex flex-col gap-2 p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800">
                 <div className="flex items-center justify-between text-xs font-bold text-blue-400">
-                  <span>Gemini API Key</span>
+                  <span>Google Gemini</span>
                   {testState.gemini.valid && (
                     <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
-                      ✓ Key Verified
+                      ✓ Connection Good!
                     </span>
                   )}
                 </div>
@@ -232,29 +240,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="button"
                     disabled={testState.gemini.loading || !geminiKey.trim()}
                     onClick={() => handleTestKey('gemini')}
-                    className="px-3 py-2 rounded-xl bg-blue-900/60 hover:bg-blue-800 border border-blue-500/40 text-blue-200 text-xs font-bold disabled:opacity-40"
+                    className="px-3.5 py-2 rounded-xl bg-blue-900/60 hover:bg-blue-800 border border-blue-500/40 text-blue-200 text-xs font-bold disabled:opacity-40 shrink-0"
                   >
-                    {testState.gemini.loading ? 'Testing...' : 'Test Key'}
+                    {testState.gemini.loading ? 'Testing...' : 'Test Connection'}
                   </button>
                 </div>
 
                 {/* Gemini Error Message */}
                 {testState.gemini.error && (
-                  <span className="text-[11px] text-red-400 font-medium">
+                  <div className="text-[11px] text-red-400 font-medium bg-red-950/40 border border-red-900/50 rounded-lg p-2 leading-relaxed">
                     ✕ {testState.gemini.error}
-                  </span>
+                  </div>
                 )}
 
-                {/* Gemini Model Selector */}
-                {testState.gemini.models && (
-                  <div className="mt-1 flex items-center gap-2 pt-2 border-t border-zinc-800/80">
-                    <span className="text-[11px] text-zinc-400">Model:</span>
+                {/* Gemini Model Selector - Unlocked after good connection */}
+                {testState.gemini.valid && testState.gemini.models && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-1 flex flex-col gap-1 pt-2 border-t border-zinc-800"
+                  >
+                    <label className="text-[11px] font-bold text-zinc-400">
+                      Select Gemini Model:
+                    </label>
                     <select
                       value={customModels.gemini || testState.gemini.models[0]?.id}
                       onChange={(e) =>
                         setCustomModels((prev) => ({ ...prev, gemini: e.target.value }))
                       }
-                      className="flex-1 bg-zinc-950 border border-zinc-800 text-amber-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500 cursor-pointer"
+                      className="w-full bg-zinc-950 border border-zinc-800 text-amber-300 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-amber-500 cursor-pointer font-medium"
                     >
                       {testState.gemini.models.map((m) => (
                         <option key={m.id} value={m.id}>
@@ -262,17 +276,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </option>
                       ))}
                     </select>
-                  </div>
+                  </motion.div>
                 )}
               </div>
 
-              {/* 2. Anthropic Claude Key & Model */}
-              <div className="flex flex-col gap-1.5 p-3 rounded-2xl bg-zinc-900/60 border border-zinc-800">
+              {/* 2. Anthropic Claude Provider */}
+              <div className="flex flex-col gap-2 p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800">
                 <div className="flex items-center justify-between text-xs font-bold text-amber-400">
-                  <span>Anthropic Claude Key</span>
+                  <span>Anthropic Claude</span>
                   {testState.anthropic.valid && (
                     <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
-                      ✓ Key Verified
+                      ✓ Connection Good!
                     </span>
                   )}
                 </div>
@@ -291,27 +305,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="button"
                     disabled={testState.anthropic.loading || !claudeKey.trim()}
                     onClick={() => handleTestKey('anthropic')}
-                    className="px-3 py-2 rounded-xl bg-amber-900/60 hover:bg-amber-800 border border-amber-500/40 text-amber-200 text-xs font-bold disabled:opacity-40"
+                    className="px-3.5 py-2 rounded-xl bg-amber-900/60 hover:bg-amber-800 border border-amber-500/40 text-amber-200 text-xs font-bold disabled:opacity-40 shrink-0"
                   >
-                    {testState.anthropic.loading ? 'Testing...' : 'Test Key'}
+                    {testState.anthropic.loading ? 'Testing...' : 'Test Connection'}
                   </button>
                 </div>
 
                 {testState.anthropic.error && (
-                  <span className="text-[11px] text-red-400 font-medium">
+                  <div className="text-[11px] text-red-400 font-medium bg-red-950/40 border border-red-900/50 rounded-lg p-2 leading-relaxed">
                     ✕ {testState.anthropic.error}
-                  </span>
+                  </div>
                 )}
 
-                {testState.anthropic.models && (
-                  <div className="mt-1 flex items-center gap-2 pt-2 border-t border-zinc-800/80">
-                    <span className="text-[11px] text-zinc-400">Model:</span>
+                {testState.anthropic.valid && testState.anthropic.models && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-1 flex flex-col gap-1 pt-2 border-t border-zinc-800"
+                  >
+                    <label className="text-[11px] font-bold text-zinc-400">
+                      Select Claude Model:
+                    </label>
                     <select
                       value={customModels.anthropic || testState.anthropic.models[0]?.id}
                       onChange={(e) =>
                         setCustomModels((prev) => ({ ...prev, anthropic: e.target.value }))
                       }
-                      className="flex-1 bg-zinc-950 border border-zinc-800 text-amber-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500 cursor-pointer"
+                      className="w-full bg-zinc-950 border border-zinc-800 text-amber-300 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-amber-500 cursor-pointer font-medium"
                     >
                       {testState.anthropic.models.map((m) => (
                         <option key={m.id} value={m.id}>
@@ -319,17 +339,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </option>
                       ))}
                     </select>
-                  </div>
+                  </motion.div>
                 )}
               </div>
 
-              {/* 3. OpenAI Key & Model */}
-              <div className="flex flex-col gap-1.5 p-3 rounded-2xl bg-zinc-900/60 border border-zinc-800">
+              {/* 3. OpenAI Provider */}
+              <div className="flex flex-col gap-2 p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800">
                 <div className="flex items-center justify-between text-xs font-bold text-emerald-400">
-                  <span>OpenAI Key</span>
+                  <span>OpenAI</span>
                   {testState.openai.valid && (
                     <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
-                      ✓ Key Verified
+                      ✓ Connection Good!
                     </span>
                   )}
                 </div>
@@ -348,27 +368,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="button"
                     disabled={testState.openai.loading || !openaiKey.trim()}
                     onClick={() => handleTestKey('openai')}
-                    className="px-3 py-2 rounded-xl bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-500/40 text-emerald-200 text-xs font-bold disabled:opacity-40"
+                    className="px-3.5 py-2 rounded-xl bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-500/40 text-emerald-200 text-xs font-bold disabled:opacity-40 shrink-0"
                   >
-                    {testState.openai.loading ? 'Testing...' : 'Test Key'}
+                    {testState.openai.loading ? 'Testing...' : 'Test Connection'}
                   </button>
                 </div>
 
                 {testState.openai.error && (
-                  <span className="text-[11px] text-red-400 font-medium">
+                  <div className="text-[11px] text-red-400 font-medium bg-red-950/40 border border-red-900/50 rounded-lg p-2 leading-relaxed">
                     ✕ {testState.openai.error}
-                  </span>
+                  </div>
                 )}
 
-                {testState.openai.models && (
-                  <div className="mt-1 flex items-center gap-2 pt-2 border-t border-zinc-800/80">
-                    <span className="text-[11px] text-zinc-400">Model:</span>
+                {testState.openai.valid && testState.openai.models && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-1 flex flex-col gap-1 pt-2 border-t border-zinc-800"
+                  >
+                    <label className="text-[11px] font-bold text-zinc-400">
+                      Select OpenAI Model:
+                    </label>
                     <select
                       value={customModels.openai || testState.openai.models[0]?.id}
                       onChange={(e) =>
                         setCustomModels((prev) => ({ ...prev, openai: e.target.value }))
                       }
-                      className="flex-1 bg-zinc-950 border border-zinc-800 text-amber-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500 cursor-pointer"
+                      className="w-full bg-zinc-950 border border-zinc-800 text-amber-300 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-amber-500 cursor-pointer font-medium"
                     >
                       {testState.openai.models.map((m) => (
                         <option key={m.id} value={m.id}>
@@ -376,7 +402,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </option>
                       ))}
                     </select>
-                  </div>
+                  </motion.div>
                 )}
               </div>
 

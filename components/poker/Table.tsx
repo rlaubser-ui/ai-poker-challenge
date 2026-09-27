@@ -9,6 +9,11 @@ import { usePokerStore } from '@/store/usePokerStore';
 
 export const Table: React.FC = () => {
   const { gameState, isAITurn } = usePokerStore();
+  const [isOverlayMinimized, setIsOverlayMinimized] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsOverlayMinimized(false);
+  }, [gameState?.handId]);
 
   if (!gameState) {
     return (
@@ -110,21 +115,43 @@ export const Table: React.FC = () => {
 
           {/* Showdown Result Overlay Banner */}
           {gameState.stage === 'ended' && winner && (
-            <motion.div
-              initial={{ scale: 0.85, opacity: 0, y: 10 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              className="absolute inset-x-4 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center bg-zinc-950/95 border-2 border-amber-400/80 rounded-3xl p-5 shadow-[0_0_50px_rgba(212,175,55,0.3)] backdrop-blur-lg max-w-md mx-auto text-center"
-            >
-              <div className="text-2xl mb-1">
-                {winner.playerId.includes('ai') ? '🤖' : '🏆'}
-              </div>
-              <h3 className="text-xl font-black text-amber-300 tracking-tight">
-                {winner.description}
-              </h3>
-              <p className="text-zinc-300 font-mono text-sm mt-1">
-                Awarded <span className="text-amber-400 font-bold">${winner.amount.toLocaleString()}</span> to pot winner
-              </p>
-            </motion.div>
+            isOverlayMinimized ? (
+              <motion.button
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                onClick={() => setIsOverlayMinimized(false)}
+                className="absolute bottom-3 sm:bottom-4 z-30 px-3.5 py-1.5 rounded-full bg-zinc-950/95 border border-amber-400/80 shadow-lg text-amber-300 font-bold text-xs flex items-center gap-2 hover:bg-zinc-900 transition-colors backdrop-blur-md"
+              >
+                <span>{winner.playerId.includes('ai') ? (ai.avatar || '🤖') : '🏆'}</span>
+                <span>{winner.description}</span>
+                <span className="text-[10px] text-zinc-300 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/40 font-semibold">
+                  👁️ Show Result
+                </span>
+              </motion.button>
+            ) : (
+              <motion.div
+                initial={{ scale: 0.85, opacity: 0, y: 10 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                className="absolute inset-x-4 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center bg-zinc-950/95 border-2 border-amber-400/80 rounded-2xl p-4 shadow-[0_0_50px_rgba(212,175,55,0.3)] backdrop-blur-lg max-w-sm mx-auto text-center"
+              >
+                <button
+                  onClick={() => setIsOverlayMinimized(true)}
+                  className="absolute top-2.5 right-2.5 text-[11px] text-zinc-400 hover:text-amber-300 px-2 py-0.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-800 transition-colors flex items-center gap-1 font-sans border border-zinc-700/60"
+                  title="Minimize banner to inspect cards"
+                >
+                  <span>👁️</span> Peek Cards
+                </button>
+                <div className="text-2xl mb-0.5 mt-1">
+                  {winner.playerId.includes('ai') ? (ai.avatar || '🤖') : '🏆'}
+                </div>
+                <h3 className="text-lg font-black text-amber-300 tracking-tight px-4">
+                  {winner.description}
+                </h3>
+                <p className="text-zinc-300 font-mono text-xs mt-1">
+                  Awarded <span className="text-amber-400 font-bold">${winner.amount.toLocaleString()}</span> to pot winner
+                </p>
+              </motion.div>
+            )
           )}
         </div>
       </div>

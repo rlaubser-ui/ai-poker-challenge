@@ -2,31 +2,37 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { AIPersonaId } from '@/types/ai';
+import { CustomBot } from '@/types/ai';
 import { ActionControls } from '@/components/poker/ActionControls';
 import { BanterBox } from '@/components/poker/BanterBox';
+import { CustomBotModal } from '@/components/poker/CustomBotModal';
 import { SettingsModal } from '@/components/poker/SettingsModal';
 import { Table } from '@/components/poker/Table';
 import { ThinkingDrawer } from '@/components/poker/ThinkingDrawer';
-import { PERSONAS } from '@/lib/ai/personas';
 import { usePokerStore } from '@/store/usePokerStore';
 
 export default function PokerArenaPage() {
   const {
-    gameState,
     initGame,
     selectedPersonaId,
+    customBots,
+    deleteCustomBot,
     setPersona,
     lastAIResponse,
     handsPlayed,
     stats,
+    settings,
   } = usePokerStore();
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isCustomBotModalOpen, setIsCustomBotModalOpen] = useState(false);
+  const [botToEdit, setBotToEdit] = useState<CustomBot | null>(null);
 
   useEffect(() => {
     initGame();
   }, [initGame]);
+
+  const currentCustomBot = customBots.find((b) => b.id === selectedPersonaId);
 
   return (
     <main className="flex flex-col min-h-screen bg-radial-gradient from-zinc-900 to-zinc-950 px-2 sm:px-4 py-3">
@@ -41,22 +47,91 @@ export default function PokerArenaPage() {
           </h1>
         </div>
 
-        {/* Persona Selector, Stats & Settings */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* Persona Dropdown */}
-          <div className="flex items-center gap-1.5 bg-zinc-900/90 border border-zinc-700/60 rounded-xl px-3 py-1.5 shadow-inner">
-            <span className="text-xs text-zinc-400">Opponent:</span>
+        {/* Persona Selector, Custom Bot Actions, Stats & Settings */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          {/* Opponent Selector */}
+          <div className="flex items-center gap-1.5 bg-zinc-900/90 border border-zinc-700/60 rounded-xl px-2.5 py-1.5 shadow-inner">
+            <span className="text-xs text-zinc-400 font-medium">Opponent:</span>
             <select
               value={selectedPersonaId}
-              onChange={(e) => setPersona(e.target.value as AIPersonaId)}
-              className="bg-transparent text-xs font-bold text-amber-300 focus:outline-none cursor-pointer"
+              onChange={(e) => {
+                if (e.target.value === '__new_bot__') {
+                  setBotToEdit(null);
+                  setIsCustomBotModalOpen(true);
+                } else {
+                  setPersona(e.target.value);
+                }
+              }}
+              className="bg-transparent text-xs font-bold text-amber-300 focus:outline-none cursor-pointer max-w-[190px] sm:max-w-[220px] truncate"
             >
-              {Object.values(PERSONAS).map((p) => (
-                <option key={p.id} value={p.id} className="bg-zinc-900 text-zinc-100">
-                  {p.avatar} {p.name}
+              <optgroup label="Default AI Models">
+                <option value="gemini" className="bg-zinc-900 text-zinc-100">
+                  💎 Gemini ({settings.customModels?.gemini || '1.5 Flash'})
                 </option>
-              ))}
+                <option value="claude" className="bg-zinc-900 text-zinc-100">
+                  🧠 Claude ({settings.customModels?.anthropic || '3.5 Sonnet'})
+                </option>
+                <option value="gpt" className="bg-zinc-900 text-zinc-100">
+                  ⚡ GPT-4o ({settings.customModels?.openai || 'GPT-4o'})
+                </option>
+                <option value="mock" className="bg-zinc-900 text-zinc-100">
+                  🤖 Mock Bot (Rule Engine)
+                </option>
+              </optgroup>
+
+              {customBots.length > 0 && (
+                <optgroup label="Custom Bots">
+                  {customBots.map((bot) => (
+                    <option key={bot.id} value={bot.id} className="bg-zinc-900 text-zinc-100">
+                      {bot.avatar} {bot.name} ({bot.provider.toUpperCase()} • {bot.style})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              <option value="__new_bot__" className="bg-zinc-900 text-amber-400 font-bold">
+                + Create Custom Bot...
+              </option>
             </select>
+
+            {/* Quick Action to Create Custom Bot */}
+            <button
+              onClick={() => {
+                setBotToEdit(null);
+                setIsCustomBotModalOpen(true);
+              }}
+              className="ml-1 text-[11px] px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-semibold transition-all shadow-sm"
+              title="Create Custom Bot"
+            >
+              + Bot
+            </button>
+
+            {/* Edit / Delete buttons if current selection is custom */}
+            {currentCustomBot && (
+              <div className="flex items-center gap-1 ml-1 border-l border-zinc-700/60 pl-1.5">
+                <button
+                  onClick={() => {
+                    setBotToEdit(currentCustomBot);
+                    setIsCustomBotModalOpen(true);
+                  }}
+                  className="text-xs p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-amber-300 transition-colors"
+                  title="Edit Bot"
+                >
+                  ✏️
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm(`Delete custom bot "${currentCustomBot.name}"?`)) {
+                      deleteCustomBot(currentCustomBot.id);
+                    }
+                  }}
+                  className="text-xs p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-red-400 transition-colors"
+                  title="Delete Bot"
+                >
+                  🗑️
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Session Record */}
@@ -112,6 +187,16 @@ export default function PokerArenaPage() {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* Custom Bot Modal Dialog */}
+      <CustomBotModal
+        isOpen={isCustomBotModalOpen}
+        onClose={() => {
+          setIsCustomBotModalOpen(false);
+          setBotToEdit(null);
+        }}
+        botToEdit={botToEdit}
       />
     </main>
   );

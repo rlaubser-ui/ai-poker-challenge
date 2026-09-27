@@ -1,14 +1,63 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { AIActionResponse, AIPersonaId } from '@/types/ai';
+import { AIActionResponse, AIPersonaId, CustomBot } from '@/types/ai';
 import { GameState, Player, PlayerAction } from '@/types/poker';
 import { BanterMessage, UserSettings } from '@/types/settings';
 import { getPersonaConfig } from '@/lib/ai/personas';
 import { applyAction, createInitialGameState } from '@/lib/poker/engine';
 
+export interface ActiveBotInfo {
+  id: string;
+  name: string;
+  avatar: string;
+  style: string;
+  model: string;
+  isCustom: boolean;
+  customBot?: CustomBot;
+}
+
+export function resolveBotInfo(
+  personaId: string,
+  customBots: CustomBot[] = [],
+  settings?: UserSettings
+): ActiveBotInfo {
+  const custom = customBots.find((b) => b.id === personaId);
+  if (custom) {
+    return {
+      id: custom.id,
+      name: custom.name,
+      avatar: custom.avatar,
+      style: custom.style,
+      model: custom.model,
+      isCustom: true,
+      customBot: custom,
+    };
+  }
+
+  const persona = getPersonaConfig(personaId as AIPersonaId);
+  let model = persona.model;
+  if (personaId === 'gemini' && settings?.customModels?.gemini) {
+    model = settings.customModels.gemini;
+  } else if (personaId === 'claude' && settings?.customModels?.anthropic) {
+    model = settings.customModels.anthropic;
+  } else if (personaId === 'gpt' && settings?.customModels?.openai) {
+    model = settings.customModels.openai;
+  }
+
+  return {
+    id: persona.id,
+    name: persona.name,
+    avatar: persona.avatar,
+    style: persona.style,
+    model,
+    isCustom: false,
+  };
+}
+
 interface PokerStoreState {
   gameState: GameState | null;
-  selectedPersonaId: AIPersonaId;
+  selectedPersonaId: string;
+  customBots: CustomBot[];
   isAITurn: boolean;
   lastAIResponse: AIActionResponse | null;
   banterLog: BanterMessage[];
@@ -20,7 +69,10 @@ interface PokerStoreState {
   initGame: () => void;
   startNewHand: () => void;
   dispatchAction: (action: PlayerAction) => Promise<void>;
-  setPersona: (personaId: AIPersonaId) => void;
+  setPersona: (personaId: string) => void;
+  createCustomBot: (bot: Omit<CustomBot, 'id' | 'createdAt'>) => CustomBot;
+  updateCustomBot: (bot: CustomBot) => void;
+  deleteCustomBot: (botId: string) => void;
   updateSettings: (newSettings: Partial<UserSettings>) => void;
   resetBankroll: () => void;
   clearBanter: () => void;
@@ -35,8 +87,8 @@ export const usePokerStore = create<PokerStoreState>()(
         // Natural action delay
         await new Promise((resolve) => setTimeout(resolve, 600));
 
-        const { selectedPersonaId, settings } = get();
-        const persona = getPersonaConfig(selectedPersonaId);
+        const { selectedPersonaId, customBots, settings } = get();
+        const botInfo = resolveBotInfo(selectedPersonaId, customBots, settings);
 
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
@@ -45,9 +97,13 @@ export const usePokerStore = create<PokerStoreState>()(
         if (settings.apiKeys.anthropic) headers['x-anthropic-key'] = settings.apiKeys.anthropic;
         if (settings.apiKeys.openai) headers['x-openai-key'] = settings.apiKeys.openai;
 
-        const customModel = settings.customModels?.[selectedPersonaId as 'gemini' | 'anthropic' | 'openai'];
-        if (customModel) {
-          headers['x-custom-model'] = customModel;
+        if (botInfo.isCustom && botInfo.customBot) {
+          headers['x-custom-model'] = botInfo.customBot.model;
+        } else {
+          const customModel = settings.customModels?.[selectedPersonaId as 'gemini' | 'anthropic' | 'openai'];
+          if (customModel) {
+            headers['x-custom-model'] = customModel;
+          }
         }
 
         try {
@@ -57,6 +113,7 @@ export const usePokerStore = create<PokerStoreState>()(
             body: JSON.stringify({
               gameState: currentState,
               personaId: selectedPersonaId,
+              customBot: botInfo.customBot,
             }),
           });
 
@@ -71,8 +128,8 @@ export const usePokerStore = create<PokerStoreState>()(
           if (aiResponse.chat) {
             const newBanter: BanterMessage = {
               id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-              sender: persona.name,
-              avatar: persona.avatar,
+              sender: botInfo.name,
+              avatar: botInfo.avatar,
               text: aiResponse.chat,
               isAI: true,
               timestamp: Date.now(),
@@ -125,6 +182,7 @@ export const usePokerStore = create<PokerStoreState>()(
       return {
         gameState: null,
         selectedPersonaId: 'mock',
+        customBots: [],
         isAITurn: false,
         lastAIResponse: null,
         banterLog: [],
@@ -136,11 +194,13 @@ export const usePokerStore = create<PokerStoreState>()(
         stats: { humanWins: 0, aiWins: 0 },
 
         initGame: () => {
-          const persona = getPersonaConfig(get().selectedPersonaId);
+          const { selectedPersonaId, customBots, settings } = get();
+          const botInfo = resolveBotInfo(selectedPersonaId, customBots, settings);
 
           const human: Player = {
             id: 'player_human',
             name: 'You',
+            avatar: '👤',
             chips: 1000,
             currentBet: 0,
             holeCards: [],
@@ -151,7 +211,9 @@ export const usePokerStore = create<PokerStoreState>()(
 
           const ai: Player = {
             id: 'player_ai',
-            name: persona.name,
+            name: botInfo.name,
+            avatar: botInfo.avatar,
+            style: botInfo.style,
             chips: 1000,
             currentBet: 0,
             holeCards: [],
@@ -175,10 +237,10 @@ export const usePokerStore = create<PokerStoreState>()(
         },
 
         startNewHand: () => {
-          const { gameState, selectedPersonaId } = get();
+          const { gameState, selectedPersonaId, customBots, settings } = get();
           if (!gameState) return;
 
-          const persona = getPersonaConfig(selectedPersonaId);
+          const botInfo = resolveBotInfo(selectedPersonaId, customBots, settings);
           let p0Chips = gameState.players[0].chips;
           let p1Chips = gameState.players[1].chips;
 
@@ -188,6 +250,7 @@ export const usePokerStore = create<PokerStoreState>()(
           const human: Player = {
             ...gameState.players[0],
             name: 'You',
+            avatar: '👤',
             chips: p0Chips,
             currentBet: 0,
             holeCards: [],
@@ -198,7 +261,9 @@ export const usePokerStore = create<PokerStoreState>()(
 
           const ai: Player = {
             ...gameState.players[1],
-            name: persona.name,
+            name: botInfo.name,
+            avatar: botInfo.avatar,
+            style: botInfo.style,
             chips: p1Chips,
             currentBet: 0,
             holeCards: [],
@@ -254,19 +319,61 @@ export const usePokerStore = create<PokerStoreState>()(
           }
         },
 
-        setPersona: (personaId: AIPersonaId) => {
-          const persona = getPersonaConfig(personaId);
+        setPersona: (personaId: string) => {
+          const { customBots, settings } = get();
+          const botInfo = resolveBotInfo(personaId, customBots, settings);
           set((prev) => {
             if (!prev.gameState) return { selectedPersonaId: personaId };
             const updatedPlayers: [Player, Player] = [
               { ...prev.gameState.players[0] },
-              { ...prev.gameState.players[1], name: persona.name },
+              {
+                ...prev.gameState.players[1],
+                name: botInfo.name,
+                avatar: botInfo.avatar,
+                style: botInfo.style,
+              },
             ];
             return {
               selectedPersonaId: personaId,
               gameState: { ...prev.gameState, players: updatedPlayers },
             };
           });
+        },
+
+        createCustomBot: (botData) => {
+          const id = `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          const newBot: CustomBot = {
+            ...botData,
+            id,
+            createdAt: Date.now(),
+          };
+          set((prev) => ({
+            customBots: [...prev.customBots, newBot],
+            selectedPersonaId: id,
+          }));
+          get().setPersona(id);
+          return newBot;
+        },
+
+        updateCustomBot: (updatedBot: CustomBot) => {
+          set((prev) => ({
+            customBots: prev.customBots.map((b) => (b.id === updatedBot.id ? updatedBot : b)),
+          }));
+          if (get().selectedPersonaId === updatedBot.id) {
+            get().setPersona(updatedBot.id);
+          }
+        },
+
+        deleteCustomBot: (botId: string) => {
+          set((prev) => {
+            const filtered = prev.customBots.filter((b) => b.id !== botId);
+            const nextPersona = prev.selectedPersonaId === botId ? 'mock' : prev.selectedPersonaId;
+            return {
+              customBots: filtered,
+              selectedPersonaId: nextPersona,
+            };
+          });
+          get().setPersona(get().selectedPersonaId);
         },
 
         updateSettings: (newSettings: Partial<UserSettings>) => {
@@ -299,6 +406,7 @@ export const usePokerStore = create<PokerStoreState>()(
       name: 'ai-poker-challenge-storage',
       partialize: (state) => ({
         selectedPersonaId: state.selectedPersonaId,
+        customBots: state.customBots,
         settings: state.settings,
         handsPlayed: state.handsPlayed,
         stats: state.stats,

@@ -57,6 +57,8 @@ export type GameStage =
 export interface Player {
   id: string;
   name: string;
+  avatar?: string;
+  style?: string;
   chips: number;
   currentBet: number;
   holeCards: Card[];

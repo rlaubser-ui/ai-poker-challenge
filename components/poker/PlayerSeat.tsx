@@ -88,16 +88,21 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = ({
         {/* Avatar */}
         <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-600 to-yellow-400 p-0.5 shadow-md flex items-center justify-center shrink-0 text-xl">
           <div className="w-full h-full rounded-full bg-zinc-900 flex items-center justify-center">
-            {isHuman ? '👤' : '🤖'}
+            {isHuman ? '👤' : (player.avatar || '🤖')}
           </div>
         </div>
 
         {/* Player Name and Chip Count */}
         <div className="flex flex-col min-w-[90px]">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <span className="font-bold text-sm text-zinc-100 tracking-tight">
               {player.name}
             </span>
+            {player.style && !isHuman && (
+              <span className="text-[9px] font-semibold text-amber-300/90 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-500/20">
+                {player.style}
+              </span>
+            )}
             {player.isFolded && (
               <span className="text-[10px] font-bold uppercase tracking-wider text-red-400 bg-red-950/80 px-1.5 py-0.5 rounded">
                 Folded

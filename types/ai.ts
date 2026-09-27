@@ -13,7 +13,7 @@ export const AIActionResponseSchema = z.object({
 export type AIActionResponse = z.infer<typeof AIActionResponseSchema>;
 
 export interface AIPersonaConfig {
-  id: AIPersonaId;
+  id: string;
   name: string;
   model: string;
   avatar: string;
@@ -23,7 +23,21 @@ export interface AIPersonaConfig {
   defaultTemperature: number;
 }
 
+export interface CustomBot {
+  id: string;
+  name: string;
+  avatar: string;
+  provider: 'gemini' | 'claude' | 'openai' | 'mock';
+  model: string;
+  style: string;
+  banterFlavor: string;
+  systemPrompt: string;
+  temperature: number;
+  createdAt: number;
+}
+
 export interface AIActionRequest {
   gameState: GameState;
-  personaId: AIPersonaId;
+  personaId: string;
+  customBot?: CustomBot;
 }

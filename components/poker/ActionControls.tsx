@@ -47,6 +47,7 @@ export const ActionControls: React.FC = () => {
 
   // AI Thinking State Indicator
   if (isAITurn) {
+    const aiPlayerName = gameState.players[1]?.name || 'AI opponent';
     return (
       <div className="flex items-center justify-center p-6 gap-3 text-zinc-400">
         <div className="flex gap-1.5">
@@ -55,7 +56,7 @@ export const ActionControls: React.FC = () => {
           <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-bounce [animation-delay:0.4s]" />
         </div>
         <span className="font-semibold text-sm tracking-wide text-amber-300/80">
-          AI opponent is deciding...
+          {aiPlayerName} is deciding...
         </span>
       </div>
     );

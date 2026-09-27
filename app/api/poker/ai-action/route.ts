@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AIActionResponseSchema } from '@/types/ai';
+import { AIActionResponseSchema, CustomBot } from '@/types/ai';
 import { getFallbackAction } from '@/lib/ai/fallback';
 import { formatGamePrompt } from '@/lib/ai/formatPrompt';
 import { getPersonaConfig } from '@/lib/ai/personas';
@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     state = body.gameState as GameState;
     const personaId = body.personaId || 'mock';
+    const customBot = body.customBot as CustomBot | undefined;
 
     if (!state || !state.players) {
       return NextResponse.json(
@@ -28,13 +29,26 @@ export async function POST(req: NextRequest) {
     }
 
     const aiIdx = state.activePlayerIndex;
-    const aiPlayer = state.players[aiIdx];
     const valid = getValidActions(state);
 
     // 1. Instant Mock Provider (Zero Network, zero key requirement)
-    if (personaId === 'mock') {
+    if ((personaId === 'mock' && !customBot) || (customBot && customBot.provider === 'mock')) {
       const mockAction = executeMockAction(state, aiIdx);
       return NextResponse.json(mockAction);
+    }
+
+    // Determine target provider, model, and system prompt
+    let provider = personaId;
+    let model = req.headers.get('x-custom-model') || undefined;
+    let systemPrompt = '';
+
+    if (customBot) {
+      provider = customBot.provider;
+      model = customBot.model;
+      systemPrompt = customBot.systemPrompt;
+    } else {
+      const persona = getPersonaConfig(personaId);
+      systemPrompt = persona.systemPrompt;
     }
 
     // 2. Resolve API Key from headers or server environment
@@ -47,28 +61,25 @@ export async function POST(req: NextRequest) {
     let apiKey = headerKey || '';
 
     if (!apiKey) {
-      if (personaId === 'gemini') {
+      if (provider === 'gemini') {
         apiKey = process.env.GEMINI_API_KEY || '';
-      } else if (personaId === 'claude') {
+      } else if (provider === 'claude') {
         apiKey = process.env.ANTHROPIC_API_KEY || '';
-      } else if (personaId === 'gpt') {
+      } else if (provider === 'openai') {
         apiKey = process.env.OPENAI_API_KEY || '';
       }
     }
 
     if (!apiKey) {
-      // Gracefully fallback to mock/heuristic if key is missing
+      const displayName = customBot ? customBot.name : provider.toUpperCase();
       const fallback = getFallbackAction(
         state,
-        `Missing ${personaId.toUpperCase()} API Key. Configure key in Settings.`
+        `Missing API Key for ${displayName}. Configure key in Settings.`
       );
       return NextResponse.json(fallback);
     }
 
-    const persona = getPersonaConfig(personaId);
     const prompt = formatGamePrompt(state, aiIdx);
-
-    const customModel = req.headers.get('x-custom-model') || undefined;
 
     // 3. Enforce 2500ms hard timeout via AbortController
     const controller = new AbortController();
@@ -76,32 +87,32 @@ export async function POST(req: NextRequest) {
 
     let rawOutput = '';
     try {
-      if (personaId === 'gemini') {
+      if (provider === 'gemini') {
         rawOutput = await callGemini(
           prompt,
-          persona.systemPrompt,
+          systemPrompt,
           apiKey,
           controller.signal,
-          customModel
+          model
         );
-      } else if (personaId === 'claude') {
+      } else if (provider === 'claude') {
         rawOutput = await callClaude(
           prompt,
-          persona.systemPrompt,
+          systemPrompt,
           apiKey,
           controller.signal,
-          customModel
+          model
         );
-      } else if (personaId === 'gpt') {
+      } else if (provider === 'openai') {
         rawOutput = await callOpenAI(
           prompt,
-          persona.systemPrompt,
+          systemPrompt,
           apiKey,
           controller.signal,
-          customModel
+          model
         );
       } else {
-        throw new Error(`Unsupported persona: ${personaId}`);
+        throw new Error(`Unsupported provider: ${provider}`);
       }
     } finally {
       clearTimeout(timeoutId);
@@ -116,11 +127,9 @@ export async function POST(req: NextRequest) {
     let sanitizedAmount = validated.amount;
 
     if (sanitizedAction === 'check' && !valid.canCheck) {
-      // LLM attempted illegal check facing a bet -> convert to call if affordable, else fold
       sanitizedAction = valid.canCall ? 'call' : 'fold';
       sanitizedAmount = 0;
     } else if (sanitizedAction === 'call' && !valid.canCall && valid.canCheck) {
-      // LLM called when checking is free -> convert to check
       sanitizedAction = 'check';
       sanitizedAmount = 0;
     } else if (sanitizedAction === 'raise') {
@@ -128,7 +137,6 @@ export async function POST(req: NextRequest) {
         sanitizedAction = valid.canCall ? 'call' : 'check';
         sanitizedAmount = 0;
       } else {
-        // Clamp raise between min and max
         sanitizedAmount = Math.max(
           valid.minRaiseAmount,
           Math.min(sanitizedAmount, valid.maxRaiseAmount)
@@ -148,7 +156,6 @@ export async function POST(req: NextRequest) {
         ? 'AI request timed out (>2.5s)'
         : err?.message || 'Error communicating with AI model';
 
-    // Defensive fallback guarantees the game loop never crashes
     if (state) {
       return NextResponse.json(getFallbackAction(state, errorMsg));
     }

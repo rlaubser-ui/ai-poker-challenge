@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { AIPersonaId } from '@/types/ai';
 import { ActionControls } from '@/components/poker/ActionControls';
+import { BanterBox } from '@/components/poker/BanterBox';
+import { SettingsModal } from '@/components/poker/SettingsModal';
 import { Table } from '@/components/poker/Table';
+import { ThinkingDrawer } from '@/components/poker/ThinkingDrawer';
 import { PERSONAS } from '@/lib/ai/personas';
 import { usePokerStore } from '@/store/usePokerStore';
 
@@ -18,6 +21,8 @@ export default function PokerArenaPage() {
     handsPlayed,
     stats,
   } = usePokerStore();
+
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     initGame();
@@ -36,8 +41,8 @@ export default function PokerArenaPage() {
           </h1>
         </div>
 
-        {/* Persona Selector & Stats */}
-        <div className="flex items-center gap-3">
+        {/* Persona Selector, Stats & Settings */}
+        <div className="flex items-center gap-2 sm:gap-3">
           {/* Persona Dropdown */}
           <div className="flex items-center gap-1.5 bg-zinc-900/90 border border-zinc-700/60 rounded-xl px-3 py-1.5 shadow-inner">
             <span className="text-xs text-zinc-400">Opponent:</span>
@@ -62,12 +67,21 @@ export default function PokerArenaPage() {
             <span className="text-red-400 font-bold">{stats.aiWins}L</span>
             <span className="text-zinc-500 ml-1">({handsPlayed} hands)</span>
           </div>
+
+          {/* Settings Modal Button */}
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="p-2 rounded-xl bg-zinc-900/90 border border-zinc-700/60 hover:bg-zinc-800 text-zinc-300 hover:text-amber-400 transition-colors shadow-sm"
+            title="Settings & API Keys"
+          >
+            ⚙️
+          </button>
         </div>
       </header>
 
       {/* Main Poker Arena */}
-      <section className="flex-1 flex flex-col justify-center items-center py-2">
-        {/* Live AI Banter Bubble */}
+      <section className="flex-1 flex flex-col justify-center items-center py-2 w-full max-w-5xl mx-auto">
+        {/* Live AI Banter Quick Bubble */}
         {lastAIResponse?.chat && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}
@@ -84,7 +98,21 @@ export default function PokerArenaPage() {
 
         {/* Player Betting Action Controls */}
         <ActionControls />
+
+        {/* Collapsible AI Thinking Process Drawer */}
+        <ThinkingDrawer />
+
+        {/* Live Banter & Dialogue History */}
+        <div className="w-full mt-2">
+          <BanterBox />
+        </div>
       </section>
+
+      {/* Settings Modal Dialog */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
     </main>
   );
 }

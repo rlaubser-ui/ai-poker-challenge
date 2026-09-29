@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { usePokerStore } from '@/store/usePokerStore';
 import { SNG_OPPONENTS } from '@/lib/ai/personas/sng-personas';
 import { BLIND_STRUCTURE, SNG_7MAX_PAYOUTS } from '@/types/tournament';
-import { formatChips } from '@/lib/utils/format';
+import { formatChips, formatCurrency } from '@/lib/utils/format';
 
 interface TournamentLobbyModalProps {
   isOpen: boolean;
@@ -347,7 +347,7 @@ export const TournamentLobbyModal: React.FC<TournamentLobbyModalProps> = ({
               <span>
                 Your Balance:{' '}
                 <span className="font-bold text-emerald-400">
-                  ZAR {userBalance.toLocaleString()}
+                  {formatCurrency(userBalance, 'ZAR', false)}
                 </span>
               </span>
               <span>•</span>

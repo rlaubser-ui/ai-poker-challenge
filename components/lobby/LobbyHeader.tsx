@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { usePokerStore } from '@/store/usePokerStore';
+import { formatCurrency } from '@/lib/utils/format';
 
 export const LobbyHeader: React.FC = () => {
   const { settings, updateSettings } = usePokerStore();
@@ -82,7 +83,7 @@ export const LobbyHeader: React.FC = () => {
             <div className="flex flex-col text-left leading-tight">
               <span className="font-extrabold text-xs text-zinc-100">TopGunner (Hero)</span>
               <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-amber-300">
-                <span>ZAR {userBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span>{formatCurrency(userBalance, 'ZAR', true)}</span>
               </div>
             </div>
 

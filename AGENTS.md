@@ -1,7 +1,7 @@
 # AI Poker Challenge — Global Project Rules
 
 ## What This Is
-An interactive 1v1 Heads-Up No-Limit Texas Hold'em poker web application where players challenge various AI models (Gemini, Claude, GPT) equipped with distinct playing styles and live commentary/banter.
+An authentic online poker platform and AI battleground where humans and custom AI bots compete in No-Limit Texas Hold'em across Tournaments, Sit & Gos, and Cash Games. Players can create, customize, and battle their own custom AI bots (Gemini, Claude, GPT, local) equipped with distinct playing styles, strategic reasoning, and live commentary/banter. Modeled for play money with an intentional path toward full poker room emulation.
 
 **Stack**: Next.js 14+ (App Router, TypeScript), Tailwind CSS, Framer Motion, TypeScript Poker Engine.
 

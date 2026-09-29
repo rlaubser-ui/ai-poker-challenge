@@ -58,6 +58,11 @@ export const ThinkingDrawer: React.FC = () => {
               <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">
                 {lastAIResponse.thinking}
               </pre>
+              {(lastAIResponse.thinking.includes('429') || lastAIResponse.thinking.includes('Quota')) && (
+                <div className="mt-2.5 p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300 flex items-center justify-between">
+                  <span>💡 Tip: Switch to Gemini 2.5 Flash in Settings for higher request limits.</span>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

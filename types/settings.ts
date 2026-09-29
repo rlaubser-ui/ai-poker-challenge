@@ -11,6 +11,7 @@ export interface BanterMessage {
 
 export interface UserSettings {
   reasoningVisibility: ReasoningVisibility;
+  isSoundMuted?: boolean;
   apiKeys: {
     gemini?: string;
     anthropic?: string;

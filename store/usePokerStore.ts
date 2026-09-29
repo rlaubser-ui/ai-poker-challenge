@@ -1,10 +1,21 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { AIActionResponse, AIPersonaId, CustomBot } from '@/types/ai';
+import { AIActionResponse, CustomBot } from '@/types/ai';
 import { GameState, Player, PlayerAction } from '@/types/poker';
 import { BanterMessage, UserSettings } from '@/types/settings';
+import {
+  BLIND_STRUCTURE,
+  SNG_7MAX_PAYOUTS,
+  TournamentElimination,
+  TournamentState,
+} from '@/types/tournament';
+import { getSNGPersona, SNG_OPPONENTS } from '@/lib/ai/personas/sng-personas';
+import { pokerSFX } from '@/lib/audio/sfx';
+import { determineAIAction } from '@/lib/poker/ai-decision';
+import { applyAction, createInitialGameState, getValidActions } from '@/lib/poker/engine';
 import { getPersonaConfig } from '@/lib/ai/personas';
-import { applyAction, createInitialGameState } from '@/lib/poker/engine';
+import { getNextActiveSeat } from '@/lib/poker/pot';
+import { AIPersonaId } from '@/types/ai';
 
 export interface ActiveBotInfo {
   id: string;
@@ -56,359 +67,547 @@ export function resolveBotInfo(
 
 interface PokerStoreState {
   gameState: GameState | null;
-  selectedPersonaId: string;
-  customBots: CustomBot[];
+  tournament: TournamentState;
   isAITurn: boolean;
+  isFastForward: boolean;
+  actionTimeRemaining: number; // 15-second hand action timer
   lastAIResponse: AIActionResponse | null;
   banterLog: BanterMessage[];
   settings: UserSettings;
+  customBots: CustomBot[];
   handsPlayed: number;
-  stats: { humanWins: number; aiWins: number };
+  stats: { humanWins: number; aiWins: number; tournamentsPlayed: number; firstPlaceFinishes: number };
 
   // Actions
-  initGame: () => void;
+  initTournament: () => void;
   startNewHand: () => void;
   dispatchAction: (action: PlayerAction) => Promise<void>;
-  setPersona: (personaId: string) => void;
+  toggleFastForward: () => void;
+  togglePauseTournament: () => void;
+  tickTimer: () => void;
   createCustomBot: (bot: Omit<CustomBot, 'id' | 'createdAt'>) => CustomBot;
   updateCustomBot: (bot: CustomBot) => void;
   deleteCustomBot: (botId: string) => void;
-  updateSettings: (newSettings: Partial<UserSettings>) => void;
   resetBankroll: () => void;
+  updateSettings: (newSettings: Partial<UserSettings>) => void;
   clearBanter: () => void;
+  restartTournament: () => void;
+}
+
+const INITIAL_TOURNAMENT_STATE: TournamentState = {
+  id: 'sng_turbo_7max',
+  name: '$10 Turbo Sit & Go [7-Max]',
+  buyIn: 10,
+  startingChips: 1000,
+  totalPlayers: 7,
+  currentLevelIndex: 0,
+  secondsRemaining: 180,
+  isPaused: false,
+  isComplete: false,
+  prizePool: 70,
+  payouts: SNG_7MAX_PAYOUTS,
+  eliminations: [],
+  handNumber: 1,
+};
+
+function createInitialRoster(): Player[] {
+  const human: Player = {
+    id: 'player_human',
+    name: 'You',
+    avatar: '🤠',
+    style: 'Hero',
+    chips: 1000,
+    currentBet: 0,
+    holeCards: [],
+    isFolded: false,
+    isAllIn: false,
+    isAI: false,
+    isEliminated: false,
+  };
+
+  const aiPlayers: Player[] = SNG_OPPONENTS.map((bot) => ({
+    id: bot.id,
+    name: bot.name,
+    avatar: bot.avatar,
+    style: bot.badge,
+    chips: 1000,
+    currentBet: 0,
+    holeCards: [],
+    isFolded: false,
+    isAllIn: false,
+    isAI: true,
+    isEliminated: false,
+  }));
+
+  return [human, ...aiPlayers];
 }
 
 export const usePokerStore = create<PokerStoreState>()(
   persist(
     (set, get) => {
-      const triggerAITurn = async (currentState: GameState) => {
-        set({ isAITurn: true });
+      // Loop to process AI turns sequentially
+      const processAITurns = async (currentState: GameState) => {
+        let state = currentState;
 
-        // Natural action delay
-        await new Promise((resolve) => setTimeout(resolve, 600));
+        while (
+          state.stage !== 'ended' &&
+          state.stage !== 'showdown' &&
+          state.players[state.activePlayerIndex]?.isAI &&
+          !state.players[state.activePlayerIndex]?.isFolded &&
+          !state.players[state.activePlayerIndex]?.isEliminated
+        ) {
+          set({ isAITurn: true });
+          const { isFastForward } = get();
 
-        const { selectedPersonaId, customBots, settings } = get();
-        const botInfo = resolveBotInfo(selectedPersonaId, customBots, settings);
+          // Realistic visual delay for AI thinking (or fast if user fast-forwards)
+          const delay = isFastForward ? 80 : 500 + Math.floor(Math.random() * 300);
+          await new Promise((resolve) => setTimeout(resolve, delay));
 
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-        };
-        if (settings.apiKeys.gemini) headers['x-gemini-key'] = settings.apiKeys.gemini;
-        if (settings.apiKeys.anthropic) headers['x-anthropic-key'] = settings.apiKeys.anthropic;
-        if (settings.apiKeys.openai) headers['x-openai-key'] = settings.apiKeys.openai;
+          const activeIdx = state.activePlayerIndex;
+          const activePlayer = state.players[activeIdx];
+          const persona = getSNGPersona(activePlayer.id);
 
-        if (botInfo.isCustom && botInfo.customBot) {
-          headers['x-custom-model'] = botInfo.customBot.model;
-        } else {
-          const customModel = settings.customModels?.[selectedPersonaId as 'gemini' | 'anthropic' | 'openai'];
-          if (customModel) {
-            headers['x-custom-model'] = customModel;
+          const decision = determineAIAction(activePlayer, state, persona);
+
+          // Audio feedback
+          if (decision.action.type === 'raise') {
+            const isAllIn = decision.action.amount && decision.action.amount >= activePlayer.chips + activePlayer.currentBet;
+            if (isAllIn) {
+              pokerSFX.playAllIn();
+            } else {
+              pokerSFX.playChipBet();
+            }
+          } else if (decision.action.type === 'call') {
+            pokerSFX.playChipBet();
+          } else if (decision.action.type === 'check') {
+            pokerSFX.playCheckKnock();
+          } else if (decision.action.type === 'fold') {
+            pokerSFX.playFold();
+            const c1 = activePlayer.holeCards[0];
+            const c2 = activePlayer.holeCards[1];
+            const SUIT_SYMBOLS: Record<string, string> = { s: '♠', h: '♥', d: '♦', c: '♣' };
+            const card1Str = c1 ? `${c1.rank}${SUIT_SYMBOLS[c1.suit] || c1.suit}` : '';
+            const card2Str = c2 ? `${c2.rank}${SUIT_SYMBOLS[c2.suit] || c2.suit}` : '';
+            const cardsStr = card1Str && card2Str ? ` [${card1Str} ${card2Str}]` : '';
+            const foldMsg: BanterMessage = {
+              id: `fold_${Date.now()}_${activePlayer.id}`,
+              sender: 'Dealer',
+              avatar: '🃏',
+              text: `${persona.name} folded${cardsStr}`,
+              isAI: false,
+              timestamp: Date.now(),
+            };
+            set((prev) => ({
+              banterLog: [...prev.banterLog.slice(-25), foldMsg],
+            }));
           }
-        }
 
-        try {
-          const res = await fetch('/api/poker/ai-action', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              gameState: currentState,
-              personaId: selectedPersonaId,
-              customBot: botInfo.customBot,
-            }),
-          });
-
-          if (!res.ok) {
-            throw new Error(`API error: ${res.statusText}`);
-          }
-
-          const aiResponse: AIActionResponse = await res.json();
-          set({ lastAIResponse: aiResponse });
-
-          // Add AI Banter to chat log
-          if (aiResponse.chat) {
-            const newBanter: BanterMessage = {
+          // Add banter message if AI chatted
+          if (decision.chat) {
+            const banterMsg: BanterMessage = {
               id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-              sender: botInfo.name,
-              avatar: botInfo.avatar,
-              text: aiResponse.chat,
+              sender: persona.name,
+              avatar: persona.avatar,
+              text: decision.chat,
               isAI: true,
               timestamp: Date.now(),
             };
             set((prev) => ({
-              banterLog: [...prev.banterLog.slice(-15), newBanter],
+              banterLog: [...prev.banterLog.slice(-25), banterMsg],
             }));
           }
 
-          const nextAction: PlayerAction = {
-            type: aiResponse.action,
-            amount: aiResponse.amount > 0 ? aiResponse.amount : undefined,
+          state = applyAction(state, decision.action);
+          set({ gameState: state });
+
+          // If hand ended, break out
+          if (state.stage === 'ended' || state.stage === 'showdown') {
+            break;
+          }
+        }
+
+        set({ isAITurn: false, actionTimeRemaining: 15 });
+
+        // If hand ended, handle eliminations and tournament evaluation
+        if (state.stage === 'ended') {
+          handleHandCompletion(state);
+        }
+      };
+
+      const handleHandCompletion = (finalState: GameState) => {
+        pokerSFX.playWinPot();
+        const { tournament, handsPlayed, stats } = get();
+
+        // Check for player eliminations
+        const remainingActive = finalState.players.filter((p) => p.chips > 0 && !p.isEliminated);
+        const newlyEliminated = finalState.players.filter((p) => p.chips === 0 && !p.isEliminated);
+
+        let updatedEliminations = [...tournament.eliminations];
+        let isTournamentComplete = tournament.isComplete;
+        let tournamentWinner: Player | undefined = tournament.winner;
+
+        if (newlyEliminated.length > 0) {
+          // Rank from 7th down to 2nd
+          newlyEliminated.forEach((p, idx) => {
+            const rank = remainingActive.length + newlyEliminated.length - idx;
+            p.isEliminated = true;
+            p.finishRank = rank;
+
+            const elimRecord: TournamentElimination = {
+              playerId: p.id,
+              name: p.name,
+              avatar: p.avatar || '👤',
+              rank,
+              handNumber: tournament.handNumber,
+              prize: rank === 2 ? 21 : 0,
+            };
+            updatedEliminations.push(elimRecord);
+
+            // Announce in chat
+            const bustMessage: BanterMessage = {
+              id: `bust_${Date.now()}_${p.id}`,
+              sender: 'Tournament Floor',
+              avatar: '📢',
+              text: `${p.name} eliminated in ${rank === 2 ? '2nd' : rank === 3 ? '3rd' : `${rank}th`} place!`,
+              isAI: false,
+              timestamp: Date.now(),
+            };
+
+            set((prev) => ({
+              banterLog: [...prev.banterLog.slice(-25), bustMessage],
+            }));
+          });
+        }
+
+        // Check if only 1 player remains (Tournament Winner!)
+        if (remainingActive.length === 1) {
+          isTournamentComplete = true;
+          tournamentWinner = remainingActive[0];
+          tournamentWinner.finishRank = 1;
+
+          const winRecord: TournamentElimination = {
+            playerId: tournamentWinner.id,
+            name: tournamentWinner.name,
+            avatar: tournamentWinner.avatar || '🏆',
+            rank: 1,
+            handNumber: tournament.handNumber,
+            prize: 49,
+          };
+          updatedEliminations.push(winRecord);
+
+          const winnerAnnouncement: BanterMessage = {
+            id: `win_${Date.now()}`,
+            sender: 'Tournament Floor',
+            avatar: '🏆',
+            text: `🎉 Tournament Complete! ${tournamentWinner.name} wins 1st Place (\$49.00)!`,
+            isAI: false,
+            timestamp: Date.now(),
           };
 
-          const updatedState = applyAction(currentState, nextAction);
-          set({ gameState: updatedState, isAITurn: false });
-
-          // Handle hand completion
-          if (updatedState.stage === 'ended') {
-            const winner = updatedState.winners?.[0];
-            set((prev) => ({
-              handsPlayed: prev.handsPlayed + 1,
-              stats: {
-                humanWins:
-                  winner && !winner.playerId.includes('ai')
-                    ? prev.stats.humanWins + 1
-                    : prev.stats.humanWins,
-                aiWins:
-                  winner && winner.playerId.includes('ai')
-                    ? prev.stats.aiWins + 1
-                    : prev.stats.aiWins,
-              },
-            }));
-          } else if (
-            updatedState.players[updatedState.activePlayerIndex].isAI
-          ) {
-            await triggerAITurn(updatedState);
-          }
-        } catch (err) {
-          console.error('AI turn execution error:', err);
-          const valid =
-            currentState.currentBet ===
-            currentState.players[currentState.activePlayerIndex].currentBet;
-          const fallbackAction: PlayerAction = { type: valid ? 'check' : 'fold' };
-          const fallbackState = applyAction(currentState, fallbackAction);
-          set({ gameState: fallbackState, isAITurn: false });
+          set((prev) => ({
+            banterLog: [...prev.banterLog.slice(-25), winnerAnnouncement],
+            stats: {
+              ...prev.stats,
+              tournamentsPlayed: prev.stats.tournamentsPlayed + 1,
+              firstPlaceFinishes:
+                tournamentWinner?.id === 'player_human'
+                  ? prev.stats.firstPlaceFinishes + 1
+                  : prev.stats.firstPlaceFinishes,
+            },
+          }));
         }
+
+        const humanWonHand = finalState.winners?.some((w) => w.playerId === 'player_human');
+
+        set({
+          handsPlayed: handsPlayed + 1,
+          stats: {
+            ...stats,
+            humanWins: humanWonHand ? stats.humanWins + 1 : stats.humanWins,
+            aiWins: !humanWonHand ? stats.aiWins + 1 : stats.aiWins,
+          },
+          tournament: {
+            ...tournament,
+            isComplete: isTournamentComplete,
+            winner: tournamentWinner,
+            eliminations: updatedEliminations,
+          },
+        });
       };
 
       return {
         gameState: null,
-        selectedPersonaId: 'mock',
-        customBots: [],
+        tournament: INITIAL_TOURNAMENT_STATE,
         isAITurn: false,
+        isFastForward: false,
+        actionTimeRemaining: 15,
         lastAIResponse: null,
         banterLog: [],
         settings: {
           reasoningVisibility: 'showdown',
+          isSoundMuted: false,
           apiKeys: {},
         },
         handsPlayed: 0,
-        stats: { humanWins: 0, aiWins: 0 },
+        stats: { humanWins: 0, aiWins: 0, tournamentsPlayed: 0, firstPlaceFinishes: 0 },
 
-        initGame: () => {
-          const { selectedPersonaId, customBots, settings } = get();
-          const botInfo = resolveBotInfo(selectedPersonaId, customBots, settings);
+        initTournament: () => {
+          const players = createInitialRoster();
+          const currentBlinds = BLIND_STRUCTURE[0];
 
-          const human: Player = {
-            id: 'player_human',
-            name: 'You',
-            avatar: '👤',
-            chips: 1000,
-            currentBet: 0,
-            holeCards: [],
-            isFolded: false,
-            isAllIn: false,
-            isAI: false,
-          };
-
-          const ai: Player = {
-            id: 'player_ai',
-            name: botInfo.name,
-            avatar: botInfo.avatar,
-            style: botInfo.style,
-            chips: 1000,
-            currentBet: 0,
-            holeCards: [],
-            isFolded: false,
-            isAllIn: false,
-            isAI: true,
-          };
+          pokerSFX.playDealCard();
 
           const initialState = createInitialGameState({
-            players: [human, ai],
+            players,
             dealerIndex: 0,
-            smallBlind: 10,
-            bigBlind: 20,
+            smallBlind: currentBlinds.smallBlind,
+            bigBlind: currentBlinds.bigBlind,
+            ante: currentBlinds.ante,
           });
 
-          set({ gameState: initialState, lastAIResponse: null });
+          const welcomeMsg: BanterMessage = {
+            id: `welcome_${Date.now()}`,
+            sender: 'Dealer',
+            avatar: '♠️',
+            text: 'Welcome to the $10 Turbo Sit & Go (7-Max)! Starting stack: 1,000 chips. 3-minute blind levels.',
+            isAI: false,
+            timestamp: Date.now(),
+          };
 
-          if (initialState.players[initialState.activePlayerIndex].isAI) {
-            triggerAITurn(initialState);
+          set({
+            gameState: initialState,
+            tournament: {
+              ...INITIAL_TOURNAMENT_STATE,
+              handNumber: 1,
+            },
+            banterLog: [welcomeMsg],
+            isFastForward: false,
+            actionTimeRemaining: 15,
+          });
+
+          // If first actor is AI, kick off AI turn loop
+          if (initialState.players[initialState.activePlayerIndex]?.isAI) {
+            processAITurns(initialState);
           }
         },
 
         startNewHand: () => {
-          const { gameState, selectedPersonaId, customBots, settings } = get();
-          if (!gameState) return;
+          const { gameState, tournament } = get();
+          if (!gameState || tournament.isComplete) return;
 
-          const botInfo = resolveBotInfo(selectedPersonaId, customBots, settings);
-          let p0Chips = gameState.players[0].chips;
-          let p1Chips = gameState.players[1].chips;
+          // Rotate dealer button to next active (non-eliminated) player
+          const nextDealer = getNextActiveSeat(
+            gameState.players,
+            gameState.dealerIndex,
+            (p) => !p.isEliminated && p.chips > 0
+          );
 
-          if (p0Chips <= 0) p0Chips = 1000;
-          if (p1Chips <= 0) p1Chips = 1000;
+          const currentBlindLevel = BLIND_STRUCTURE[tournament.currentLevelIndex] || BLIND_STRUCTURE[BLIND_STRUCTURE.length - 1];
 
-          const human: Player = {
-            ...gameState.players[0],
-            name: 'You',
-            avatar: '👤',
-            chips: p0Chips,
-            currentBet: 0,
-            holeCards: [],
-            isFolded: false,
-            isAllIn: false,
-            isAI: false,
-          };
-
-          const ai: Player = {
-            ...gameState.players[1],
-            name: botInfo.name,
-            avatar: botInfo.avatar,
-            style: botInfo.style,
-            chips: p1Chips,
-            currentBet: 0,
-            holeCards: [],
-            isFolded: false,
-            isAllIn: false,
-            isAI: true,
-          };
-
-          const nextDealerIdx = 1 - gameState.dealerIndex;
+          pokerSFX.playDealCard();
 
           const nextState = createInitialGameState({
-            players: [human, ai],
-            dealerIndex: nextDealerIdx,
-            smallBlind: 10,
-            bigBlind: 20,
+            players: gameState.players,
+            dealerIndex: nextDealer,
+            smallBlind: currentBlindLevel.smallBlind,
+            bigBlind: currentBlindLevel.bigBlind,
+            ante: currentBlindLevel.ante,
           });
 
-          set({ gameState: nextState, lastAIResponse: null });
+          set({
+            gameState: nextState,
+            tournament: {
+              ...tournament,
+              handNumber: tournament.handNumber + 1,
+            },
+            actionTimeRemaining: 15,
+          });
 
-          if (nextState.players[nextState.activePlayerIndex].isAI) {
-            triggerAITurn(nextState);
+          // If first actor is AI, run AI turns
+          if (nextState.players[nextState.activePlayerIndex]?.isAI) {
+            processAITurns(nextState);
           }
         },
 
         dispatchAction: async (action: PlayerAction) => {
-          const { gameState, isAITurn } = get();
-          if (!gameState || isAITurn || gameState.stage === 'ended') return;
+          const { gameState } = get();
+          if (!gameState || gameState.stage === 'ended' || gameState.stage === 'showdown') {
+            return;
+          }
 
-          try {
-            const nextState = applyAction(gameState, action);
-            set({ gameState: nextState });
-
-            if (nextState.stage === 'ended') {
-              const winner = nextState.winners?.[0];
-              set((prev) => ({
-                handsPlayed: prev.handsPlayed + 1,
-                stats: {
-                  humanWins:
-                    winner && !winner.playerId.includes('ai')
-                      ? prev.stats.humanWins + 1
-                      : prev.stats.humanWins,
-                  aiWins:
-                    winner && winner.playerId.includes('ai')
-                      ? prev.stats.aiWins + 1
-                      : prev.stats.aiWins,
-                },
-              }));
-            } else if (nextState.players[nextState.activePlayerIndex].isAI) {
-              await triggerAITurn(nextState);
+          // Audio feedback
+          if (action.type === 'raise') {
+            const activeP = gameState.players[gameState.activePlayerIndex];
+            if (action.amount && action.amount >= activeP.chips + activeP.currentBet) {
+              pokerSFX.playAllIn();
+            } else {
+              pokerSFX.playChipBet();
             }
-          } catch (err) {
-            console.error('Failed to apply human action:', err);
+          } else if (action.type === 'call') {
+            pokerSFX.playChipBet();
+          } else if (action.type === 'check') {
+            pokerSFX.playCheckKnock();
+          } else if (action.type === 'fold') {
+            pokerSFX.playFold();
+          }
+
+          const nextState = applyAction(gameState, action);
+          set({ gameState: nextState, actionTimeRemaining: 15 });
+
+          if (nextState.stage === 'ended') {
+            handleHandCompletion(nextState);
+          } else if (nextState.players[nextState.activePlayerIndex]?.isAI) {
+            await processAITurns(nextState);
           }
         },
 
-        setPersona: (personaId: string) => {
-          const { customBots, settings } = get();
-          const botInfo = resolveBotInfo(personaId, customBots, settings);
-          set((prev) => {
-            if (!prev.gameState) return { selectedPersonaId: personaId };
-            const updatedPlayers: [Player, Player] = [
-              { ...prev.gameState.players[0] },
-              {
-                ...prev.gameState.players[1],
-                name: botInfo.name,
-                avatar: botInfo.avatar,
-                style: botInfo.style,
-              },
-            ];
-            return {
-              selectedPersonaId: personaId,
-              gameState: { ...prev.gameState, players: updatedPlayers },
-            };
+        toggleFastForward: () => {
+          set((prev) => ({ isFastForward: !prev.isFastForward }));
+        },
+
+        togglePauseTournament: () => {
+          set((prev) => ({
+            tournament: {
+              ...prev.tournament,
+              isPaused: !prev.tournament.isPaused,
+            },
+          }));
+        },
+
+        tickTimer: () => {
+          const { tournament, gameState, isAITurn, actionTimeRemaining, dispatchAction } = get();
+
+          // 1. 15-Second Action Shot Clock for Human Player
+          const isHumanTurn =
+            gameState &&
+            gameState.stage !== 'ended' &&
+            gameState.stage !== 'showdown' &&
+            !isAITurn &&
+            gameState.activePlayerIndex === 0;
+
+          if (isHumanTurn) {
+            if (actionTimeRemaining <= 1) {
+              // Time expired! Auto-action (check if allowed, else fold)
+              const valid = getValidActions(gameState);
+              dispatchAction({ type: valid.canCheck ? 'check' : 'fold' });
+              set({ actionTimeRemaining: 15 });
+            } else {
+              const nextSec = actionTimeRemaining - 1;
+              if (nextSec <= 5) {
+                pokerSFX.playTimerTick();
+              }
+              set({ actionTimeRemaining: nextSec });
+            }
+          } else {
+            if (actionTimeRemaining !== 15) {
+              set({ actionTimeRemaining: 15 });
+            }
+          }
+
+          if (tournament.isPaused || tournament.isComplete) return;
+
+          let seconds = tournament.secondsRemaining - 1;
+          let levelIdx = tournament.currentLevelIndex;
+
+          if (seconds <= 0) {
+            // Level Up!
+            if (levelIdx < BLIND_STRUCTURE.length - 1) {
+              levelIdx += 1;
+              const newLevel = BLIND_STRUCTURE[levelIdx];
+              seconds = newLevel.durationSeconds;
+
+              // Play alert
+              pokerSFX.playTimerTick();
+
+              // Add chat alert
+              const levelUpMsg: BanterMessage = {
+                id: `lvl_${Date.now()}`,
+                sender: 'Tournament Clock',
+                avatar: '⏱️',
+                text: `⚠️ BLINDS INCREASE: Level ${newLevel.level} — Blinds now ${newLevel.smallBlind}/${newLevel.bigBlind}${newLevel.ante ? ` (Ante ${newLevel.ante})` : ''}`,
+                isAI: false,
+                timestamp: Date.now(),
+              };
+
+              set((prev) => ({
+                banterLog: [...prev.banterLog.slice(-25), levelUpMsg],
+              }));
+
+              if (gameState) {
+                set({
+                  gameState: {
+                    ...gameState,
+                    smallBlind: newLevel.smallBlind,
+                    bigBlind: newLevel.bigBlind,
+                    ante: newLevel.ante,
+                  },
+                });
+              }
+            } else {
+              seconds = 180;
+            }
+          }
+
+          set({
+            tournament: {
+              ...tournament,
+              secondsRemaining: seconds,
+              currentLevelIndex: levelIdx,
+            },
           });
         },
 
-        createCustomBot: (botData) => {
-          const id = `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        customBots: [],
+
+        createCustomBot: (botData: Omit<CustomBot, 'id' | 'createdAt'>) => {
           const newBot: CustomBot = {
             ...botData,
-            id,
+            id: `bot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             createdAt: Date.now(),
           };
-          set((prev) => ({
-            customBots: [...prev.customBots, newBot],
-            selectedPersonaId: id,
-          }));
-          get().setPersona(id);
+          set((prev) => ({ customBots: [...prev.customBots, newBot] }));
           return newBot;
         },
 
-        updateCustomBot: (updatedBot: CustomBot) => {
+        updateCustomBot: (bot: CustomBot) => {
           set((prev) => ({
-            customBots: prev.customBots.map((b) => (b.id === updatedBot.id ? updatedBot : b)),
+            customBots: prev.customBots.map((b) => (b.id === bot.id ? bot : b)),
           }));
-          if (get().selectedPersonaId === updatedBot.id) {
-            get().setPersona(updatedBot.id);
-          }
         },
 
         deleteCustomBot: (botId: string) => {
-          set((prev) => {
-            const filtered = prev.customBots.filter((b) => b.id !== botId);
-            const nextPersona = prev.selectedPersonaId === botId ? 'mock' : prev.selectedPersonaId;
-            return {
-              customBots: filtered,
-              selectedPersonaId: nextPersona,
-            };
-          });
-          get().setPersona(get().selectedPersonaId);
-        },
-
-        updateSettings: (newSettings: Partial<UserSettings>) => {
           set((prev) => ({
-            settings: { ...prev.settings, ...newSettings },
+            customBots: prev.customBots.filter((b) => b.id !== botId),
           }));
         },
 
         resetBankroll: () => {
+          get().restartTournament();
+        },
+
+        updateSettings: (newSettings: Partial<UserSettings>) => {
           set((prev) => {
-            if (!prev.gameState) return {};
-            const updatedPlayers: [Player, Player] = [
-              { ...prev.gameState.players[0], chips: 1000 },
-              { ...prev.gameState.players[1], chips: 1000 },
-            ];
-            return {
-              gameState: { ...prev.gameState, players: updatedPlayers },
-              stats: { humanWins: 0, aiWins: 0 },
-              handsPlayed: 0,
-            };
+            const updated = { ...prev.settings, ...newSettings };
+            if (typeof updated.isSoundMuted === 'boolean') {
+              pokerSFX.setMuted(updated.isSoundMuted);
+            }
+            return { settings: updated };
           });
         },
 
         clearBanter: () => {
           set({ banterLog: [] });
         },
+
+        restartTournament: () => {
+          get().initTournament();
+        },
       };
     },
     {
       name: 'ai-poker-challenge-storage',
       partialize: (state) => ({
-        selectedPersonaId: state.selectedPersonaId,
-        customBots: state.customBots,
         settings: state.settings,
-        handsPlayed: state.handsPlayed,
         stats: state.stats,
       }),
     }

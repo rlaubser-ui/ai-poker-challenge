@@ -10,20 +10,38 @@ import {
 } from '@/types/poker';
 import { createDeck, dealCards, shuffleDeck } from './deck';
 import { evaluateHand } from './evaluator';
-import { distributePot, postBlinds } from './pot';
+import { calculatePots, distributePot, getNextActiveSeat, postBlinds } from './pot';
 
 export interface StartHandOptions {
-  players: [Player, Player];
+  players: Player[];
   dealerIndex?: number;
   smallBlind?: number;
   bigBlind?: number;
+  ante?: number;
   rng?: () => number;
 }
 
 /**
- * Initializes a new Heads-Up Texas Hold'em hand.
- * Deals 2 hole cards to each player and posts blinds.
- * Preflop: Dealer (dealerIndex) acts first in Heads-Up.
+ * Finds the next seated player who is eligible to act (not folded, not eliminated, not all-in).
+ */
+export function getNextPlayerToAct(
+  players: Player[],
+  fromIndex: number
+): number {
+  const n = players.length;
+  for (let i = 1; i <= n; i++) {
+    const idx = (fromIndex + i) % n;
+    const p = players[idx];
+    if (!p.isEliminated && !p.isFolded && !p.isAllIn && p.chips > 0) {
+      return idx;
+    }
+  }
+  return fromIndex;
+}
+
+/**
+ * Initializes a new Texas Hold'em hand for 2 to 9 players.
+ * Deals 2 hole cards to each active player and posts blinds/antes.
  */
 export function createInitialGameState(options: StartHandOptions): GameState {
   const {
@@ -31,50 +49,61 @@ export function createInitialGameState(options: StartHandOptions): GameState {
     dealerIndex = 0,
     smallBlind = 10,
     bigBlind = 20,
+    ante = 0,
     rng = Math.random,
   } = options;
 
   let deck = shuffleDeck(createDeck(), rng);
 
-  // Deal 2 cards to each player immutably
-  const p0Deal = dealCards(deck, 2);
-  deck = p0Deal.remaining;
+  // Initialize players and deal 2 cards to each non-eliminated player
+  const players: Player[] = initialPlayers.map((p) => {
+    const isOutOfChips = p.chips <= 0 || p.isEliminated;
+    if (isOutOfChips) {
+      return {
+        ...p,
+        holeCards: [],
+        currentBet: 0,
+        totalInvestedThisHand: 0,
+        totalInvestedThisStreet: 0,
+        isFolded: true,
+        isAllIn: false,
+        isEliminated: true,
+        lastAction: undefined,
+      };
+    }
 
-  const p1Deal = dealCards(deck, 2);
-  deck = p1Deal.remaining;
+    const deal = dealCards(deck, 2);
+    deck = deal.remaining;
 
-  const players: [Player, Player] = [
-    {
-      ...initialPlayers[0],
-      holeCards: p0Deal.dealt,
+    return {
+      ...p,
+      holeCards: deal.dealt,
       currentBet: 0,
+      totalInvestedThisHand: 0,
+      totalInvestedThisStreet: 0,
       isFolded: false,
       isAllIn: false,
-    },
-    {
-      ...initialPlayers[1],
-      holeCards: p1Deal.dealt,
-      currentBet: 0,
-      isFolded: false,
-      isAllIn: false,
-    },
-  ];
+      isEliminated: false,
+      lastAction: undefined,
+    };
+  });
 
   const baseState: GameState = {
     handId: `hand_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     stage: 'preflop',
     communityCards: [],
     pot: 0,
+    sidePots: [],
     currentBet: 0,
     minRaise: bigBlind,
     dealerIndex,
-    // In Heads-Up preflop, Dealer (Button) acts first!
     activePlayerIndex: dealerIndex,
     players,
     deck,
     handHistory: [],
     smallBlind,
     bigBlind,
+    ante,
   };
 
   return postBlinds(baseState);
@@ -97,19 +126,34 @@ export function getValidActions(state: GameState): ValidActions {
   }
 
   const activePlayer = state.players[state.activePlayerIndex];
+  if (!activePlayer || activePlayer.isFolded || activePlayer.isAllIn || activePlayer.chips === 0) {
+    return {
+      canFold: false,
+      canCheck: false,
+      canCall: false,
+      callAmount: 0,
+      canRaise: false,
+      minRaiseAmount: 0,
+      maxRaiseAmount: 0,
+    };
+  }
+
   const callAmount = state.currentBet - activePlayer.currentBet;
   const canCheck = callAmount === 0;
   const canCall = callAmount > 0 && activePlayer.chips > 0;
   const actualCallAmount = Math.min(callAmount, activePlayer.chips);
 
-  // Raising rules
-  // Player must have more chips than the amount needed to call
+  // Can raise if player has more chips than required to call,
+  // and there is at least one other non-folded player in the hand.
+  const otherActivePlayers = state.players.filter(
+    (p, idx) => idx !== state.activePlayerIndex && !p.isFolded && !p.isEliminated
+  );
+
   const canRaise =
     activePlayer.chips > actualCallAmount &&
-    !state.players[0].isAllIn &&
-    !state.players[1].isAllIn;
+    otherActivePlayers.length > 0 &&
+    otherActivePlayers.some((p) => p.chips > 0 || p.currentBet > 0);
 
-  // Minimum raise: currentBet + minRaise, capped by player's total stack
   const totalChips = activePlayer.chips + activePlayer.currentBet;
   const standardMinRaise = state.currentBet + state.minRaise;
   const minRaiseAmount = Math.min(standardMinRaise, totalChips);
@@ -128,35 +172,44 @@ export function getValidActions(state: GameState): ValidActions {
 
 /**
  * Checks if the current betting round has concluded.
- * A round concludes when:
- * 1. Both players have acted on this street at least once, AND
- * 2. Their currentBets match, OR one is all-in with bets matched up to their stack.
  */
 function isRoundComplete(
   state: GameState,
   actionsThisStreet: ActionRecord[]
 ): boolean {
-  const p0 = state.players[0];
-  const p1 = state.players[1];
+  const activeInHand = state.players.filter(
+    (p) => !p.isEliminated && !p.isFolded
+  );
 
-  if (p0.isFolded || p1.isFolded) {
+  // Hand is over if only 1 player remains unfolded
+  if (activeInHand.length <= 1) {
     return true;
   }
 
-  // Both must have acted at least once on this street
-  const p0Acted = actionsThisStreet.some((a) => a.playerId === p0.id);
-  const p1Acted = actionsThisStreet.some((a) => a.playerId === p1.id);
+  const playersWhoCanAct = activeInHand.filter(
+    (p) => !p.isAllIn && p.chips > 0
+  );
 
-  if (!p0Acted || !p1Acted) {
+  // If 0 or 1 players can act and remaining players' bets match the highest bet (or they are all-in)
+  if (playersWhoCanAct.length === 0) {
+    return true;
+  }
+
+  // All players who can act must have acted at least once on this street
+  const allActed = playersWhoCanAct.every((p) =>
+    actionsThisStreet.some((a) => a.playerId === p.id)
+  );
+
+  if (!allActed) {
     return false;
   }
 
-  // Bets must match, or a player is all in
-  if (p0.isAllIn || p1.isAllIn) {
-    return p0.currentBet === p1.currentBet || p0.isAllIn || p1.isAllIn;
-  }
+  // All non-folded players must have either matched the currentBet or be all-in
+  const betsSettled = activeInHand.every(
+    (p) => p.currentBet === state.currentBet || p.isAllIn
+  );
 
-  return p0.currentBet === p1.currentBet;
+  return betsSettled;
 }
 
 /**
@@ -193,14 +246,17 @@ export function advanceStreet(state: GameState): GameState {
     nextStage = 'showdown';
   }
 
-  // Reset bets for new street
-  const players: [Player, Player] = [
-    { ...state.players[0], currentBet: 0 },
-    { ...state.players[1], currentBet: 0 },
-  ];
+  // Reset street bets and calculate current side pots
+  const players = state.players.map((p) => ({
+    ...p,
+    currentBet: 0,
+    totalInvestedThisStreet: 0,
+  }));
 
-  // In postflop (Flop, Turn, River), Non-dealer acts first!
-  const nextActivePlayerIndex = 1 - state.dealerIndex;
+  const sidePots = calculatePots(players);
+
+  // In postflop (Flop, Turn, River), the first active player to the left of the button acts first!
+  const nextActivePlayerIndex = getNextPlayerToAct(players, state.dealerIndex);
 
   const intermediateState: GameState = {
     ...state,
@@ -208,6 +264,7 @@ export function advanceStreet(state: GameState): GameState {
     communityCards,
     deck,
     players,
+    sidePots,
     currentBet: 0,
     minRaise: state.bigBlind,
     activePlayerIndex: nextActivePlayerIndex,
@@ -218,8 +275,12 @@ export function advanceStreet(state: GameState): GameState {
     return resolveShowdown(intermediateState);
   }
 
-  // If one or both players are all in, automatically deal out remaining streets to showdown
-  if (players[0].isAllIn || players[1].isAllIn) {
+  // Check how many players can still act
+  const activeUnfolded = players.filter((p) => !p.isFolded && !p.isEliminated);
+  const playersWhoCanAct = activeUnfolded.filter((p) => !p.isAllIn && p.chips > 0);
+
+  // If at most 1 player can act and everyone else is all in, auto-run remaining streets to showdown!
+  if (playersWhoCanAct.length <= 1 && activeUnfolded.length > 1) {
     return advanceStreet(intermediateState);
   }
 
@@ -227,19 +288,19 @@ export function advanceStreet(state: GameState): GameState {
 }
 
 /**
- * Evaluates both players' hands and distributes the pot.
+ * Evaluates all remaining players' hands and distributes the pot.
  */
 export function resolveShowdown(state: GameState): GameState {
-  const p0 = state.players[0];
-  const p1 = state.players[1];
+  const evaluations: Record<string, HandEvaluation> = {};
 
-  const eval0 = evaluateHand([...p0.holeCards, ...state.communityCards]);
-  const eval1 = evaluateHand([...p1.holeCards, ...state.communityCards]);
-
-  const evaluations: Record<string, HandEvaluation> = {
-    [p0.id]: eval0,
-    [p1.id]: eval1,
-  };
+  for (const player of state.players) {
+    if (!player.isFolded && !player.isEliminated && player.holeCards.length === 2) {
+      evaluations[player.id] = evaluateHand([
+        ...player.holeCards,
+        ...state.communityCards,
+      ]);
+    }
+  }
 
   return distributePot(
     {
@@ -252,7 +313,7 @@ export function resolveShowdown(state: GameState): GameState {
 
 /**
  * Pure state reducer: Applies a player action to the game state.
- * Validates action legality and either switches turn or advances street.
+ * Validates action legality and either passes turn or advances street.
  */
 export function applyAction(
   state: GameState,
@@ -264,12 +325,12 @@ export function applyAction(
 
   const valid = getValidActions(state);
   const activeIdx = state.activePlayerIndex;
-  const players: [Player, Player] = [
-    { ...state.players[0] },
-    { ...state.players[1] },
-  ];
+  const players = state.players.map((p) => ({ ...p }));
   const activePlayer = players[activeIdx];
-  const opponent = players[1 - activeIdx];
+
+  if (!activePlayer) {
+    throw new Error(`Invalid active player at index ${activeIdx}`);
+  }
 
   let pot = state.pot;
   let currentBet = state.currentBet;
@@ -290,6 +351,7 @@ export function applyAction(
         throw new Error('Fold action is not valid in this state.');
       }
       activePlayer.isFolded = true;
+      activePlayer.lastAction = { type: 'fold', label: 'FOLD' };
       actionRecord.potAfter = pot;
 
       const foldedState: GameState = {
@@ -297,13 +359,20 @@ export function applyAction(
         players,
         handHistory: [...state.handHistory, actionRecord],
       };
-      return distributePot(foldedState);
+
+      // Check if only one player remains unfolded
+      const remainingInHand = players.filter((p) => !p.isFolded && !p.isEliminated);
+      if (remainingInHand.length === 1) {
+        return distributePot(foldedState);
+      }
+      break;
     }
 
     case 'check': {
       if (!valid.canCheck) {
         throw new Error('Check action is not allowed when there is an active bet to call.');
       }
+      activePlayer.lastAction = { type: 'check', label: 'CHECK' };
       break;
     }
 
@@ -314,9 +383,14 @@ export function applyAction(
       const toCall = Math.min(valid.callAmount, activePlayer.chips);
       activePlayer.chips -= toCall;
       activePlayer.currentBet += toCall;
+      activePlayer.totalInvestedThisHand = (activePlayer.totalInvestedThisHand || 0) + toCall;
       pot += toCall;
+
       if (activePlayer.chips === 0) {
         activePlayer.isAllIn = true;
+        activePlayer.lastAction = { type: 'call', amount: toCall, label: 'ALL-IN' };
+      } else {
+        activePlayer.lastAction = { type: 'call', amount: toCall, label: `CALL ${toCall}` };
       }
       break;
     }
@@ -334,10 +408,14 @@ export function applyAction(
       const addedChips = raiseTo - activePlayer.currentBet;
       activePlayer.chips -= addedChips;
       activePlayer.currentBet = raiseTo;
+      activePlayer.totalInvestedThisHand = (activePlayer.totalInvestedThisHand || 0) + addedChips;
       pot += addedChips;
 
       if (activePlayer.chips === 0) {
         activePlayer.isAllIn = true;
+        activePlayer.lastAction = { type: 'raise', amount: raiseTo, label: 'ALL-IN' };
+      } else {
+        activePlayer.lastAction = { type: 'raise', amount: raiseTo, label: `RAISE to ${raiseTo}` };
       }
 
       // Update min raise: difference between new bet and previous currentBet
@@ -358,24 +436,25 @@ export function applyAction(
     ...state,
     players,
     pot,
+    sidePots: calculatePots(players),
     currentBet,
     minRaise,
     handHistory: updatedHistory,
   };
 
-  // Filter actions taken on the current street
-  const actionsThisStreet = updatedHistory.filter(
-    (a) => a.stage === state.stage
-  );
+  // Filter actions taken on current street
+  const actionsThisStreet = updatedHistory.filter((a) => a.stage === state.stage);
 
   // Check if round is complete
   if (isRoundComplete(stateAfterAction, actionsThisStreet)) {
     return advanceStreet(stateAfterAction);
   }
 
-  // If round not complete, pass turn to opponent
+  // If round not complete, pass turn to next player to act
+  const nextPlayerIndex = getNextPlayerToAct(players, activeIdx);
+
   return {
     ...stateAfterAction,
-    activePlayerIndex: 1 - activeIdx,
+    activePlayerIndex: nextPlayerIndex,
   };
 }

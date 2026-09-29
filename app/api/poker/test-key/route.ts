@@ -49,20 +49,38 @@ export async function POST(req: NextRequest) {
             .map((m: any) => {
               const cleanId = m.name.replace(/^models\//, '');
               const displayName = m.displayName || cleanId;
+              const isRecommended = cleanId === 'gemini-2.5-flash' || cleanId === 'gemini-2.0-flash';
               return {
                 id: cleanId,
-                name: `${displayName} (${cleanId})`,
+                name: `${displayName} (${cleanId})${isRecommended ? ' — Recommended' : ''}`,
               };
             });
+
+          const priorityOrder = [
+            'gemini-2.5-flash',
+            'gemini-2.0-flash',
+            'gemini-1.5-flash',
+            'gemini-1.5-pro',
+            'gemini-3.7-flash',
+          ];
+
+          discoveredModels.sort((a, b) => {
+            const aIdx = priorityOrder.findIndex((p) => a.id === p || a.id.startsWith(p));
+            const bIdx = priorityOrder.findIndex((p) => b.id === p || b.id.startsWith(p));
+            if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+            if (aIdx !== -1) return -1;
+            if (bIdx !== -1) return 1;
+            return a.id.localeCompare(b.id);
+          });
         }
 
         // If list was empty for some reason, provide standard modern fallbacks
         if (discoveredModels.length === 0) {
           discoveredModels = [
-            { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest - Recommended)' },
+            { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Recommended - Fast & Reliable)' },
+            { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash (Fast)' },
+            { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
             { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro (Deep Analytical)' },
-            { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Fast)' },
-            { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
           ];
         }
 

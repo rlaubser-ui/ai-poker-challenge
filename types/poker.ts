@@ -61,10 +61,21 @@ export interface Player {
   style?: string;
   chips: number;
   currentBet: number;
+  totalInvestedThisStreet?: number;
+  totalInvestedThisHand?: number;
   holeCards: Card[];
   isFolded: boolean;
   isAllIn: boolean;
   isAI: boolean;
+  isEliminated?: boolean;
+  finishRank?: number;
+  lastAction?: { type: PlayerActionType; amount?: number; label?: string };
+}
+
+export interface SidePot {
+  id: string;
+  amount: number;
+  eligiblePlayerIds: string[];
 }
 
 export interface WinnerResult {
@@ -88,16 +99,18 @@ export interface GameState {
   stage: GameStage;
   communityCards: Card[];
   pot: number;
+  sidePots?: SidePot[];
   currentBet: number; // Current highest bet amount on this street
   minRaise: number; // Minimum valid raise amount on top of currentBet
-  dealerIndex: number; // 0 or 1 (in Heads-Up: Dealer is Small Blind)
-  activePlayerIndex: number; // 0 or 1
-  players: [Player, Player];
+  dealerIndex: number;
+  activePlayerIndex: number;
+  players: Player[];
   deck: Card[];
   winners?: WinnerResult[];
   handHistory: ActionRecord[];
   smallBlind: number;
   bigBlind: number;
+  ante?: number;
 }
 
 export interface ValidActions {

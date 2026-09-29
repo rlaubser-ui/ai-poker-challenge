@@ -4,10 +4,21 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { PlayerAction } from '@/types/poker';
 import { getValidActions } from '@/lib/poker/engine';
+import { formatChips } from '@/lib/utils/format';
 import { usePokerStore } from '@/store/usePokerStore';
 
 export const ActionControls: React.FC = () => {
-  const { gameState, isAITurn, dispatchAction, startNewHand } = usePokerStore();
+  const {
+    gameState,
+    tournament,
+    isAITurn,
+    isFastForward,
+    actionTimeRemaining,
+    dispatchAction,
+    startNewHand,
+    toggleFastForward,
+    restartTournament,
+  } = usePokerStore();
 
   const [raiseAmount, setRaiseAmount] = useState<number>(0);
   const [showRaiseSlider, setShowRaiseSlider] = useState<boolean>(false);
@@ -15,10 +26,12 @@ export const ActionControls: React.FC = () => {
   const isHumanTurn =
     gameState &&
     gameState.stage !== 'ended' &&
+    gameState.stage !== 'showdown' &&
     !isAITurn &&
     gameState.activePlayerIndex === 0;
 
   const valid = gameState ? getValidActions(gameState) : null;
+  const humanPlayer = gameState?.players[0];
 
   // Sync raise amount whenever valid actions change
   useEffect(() => {
@@ -28,6 +41,22 @@ export const ActionControls: React.FC = () => {
   }, [valid?.minRaiseAmount, valid?.canRaise]);
 
   if (!gameState) return null;
+
+  // Tournament Completed State
+  if (tournament.isComplete) {
+    return (
+      <div className="flex justify-center p-4">
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => restartTournament()}
+          className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-zinc-950 font-black text-lg shadow-xl shadow-amber-500/20 hover:brightness-110 tracking-wide flex items-center gap-2"
+        >
+          🏆 Start New Tournament
+        </motion.button>
+      </div>
+    );
+  }
 
   // Hand Ended State
   if (gameState.stage === 'ended') {
@@ -39,7 +68,7 @@ export const ActionControls: React.FC = () => {
           onClick={() => startNewHand()}
           className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-zinc-950 font-black text-lg shadow-xl shadow-amber-500/20 hover:brightness-110 tracking-wide flex items-center gap-2"
         >
-          Deal Next Hand ♠
+          Deal Next Hand ➔
         </motion.button>
       </div>
     );
@@ -47,17 +76,34 @@ export const ActionControls: React.FC = () => {
 
   // AI Thinking State Indicator
   if (isAITurn) {
-    const aiPlayerName = gameState.players[1]?.name || 'AI opponent';
+    const activePlayer = gameState.players[gameState.activePlayerIndex];
+    const aiPlayerName = activePlayer?.name || 'AI Opponent';
     return (
-      <div className="flex items-center justify-center p-6 gap-3 text-zinc-400">
-        <div className="flex gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-bounce" />
-          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-bounce [animation-delay:0.2s]" />
-          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-bounce [animation-delay:0.4s]" />
+      <div className="flex flex-col items-center justify-center p-4 gap-2 text-zinc-400">
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-bounce" />
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-bounce [animation-delay:0.2s]" />
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-bounce [animation-delay:0.4s]" />
+          </div>
+          <span className="font-semibold text-sm tracking-wide text-amber-300">
+            {aiPlayerName} is deciding...
+          </span>
         </div>
-        <span className="font-semibold text-sm tracking-wide text-amber-300/80">
-          {aiPlayerName} is deciding...
-        </span>
+
+        {/* Quick Fast Forward Option while AIs battle */}
+        {humanPlayer?.isFolded && (
+          <button
+            onClick={toggleFastForward}
+            className={`text-xs px-3 py-1 rounded-full border transition-all mt-1 ${
+              isFastForward
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                : 'bg-zinc-900 text-zinc-400 border-zinc-700 hover:text-zinc-200'
+            }`}
+          >
+            {isFastForward ? '⏩ Turbo Active (Resolving Hand)' : '⚡ Fast Forward AI Turns'}
+          </button>
+        )}
       </div>
     );
   }
@@ -98,13 +144,44 @@ export const ActionControls: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col items-center gap-3 w-full max-w-xl mx-auto px-4 pb-4">
+    <div className="flex flex-col items-center gap-2.5 w-full max-w-xl mx-auto px-4 pb-4">
+      {/* 15-Second Action Countdown Timer Bar for Hero */}
+      {isHumanTurn && (
+        <div className="w-full bg-zinc-950/85 border border-zinc-800 rounded-xl px-3 py-1.5 flex flex-col gap-1 backdrop-blur-md shadow-md">
+          <div className="flex items-center justify-between text-xs font-mono">
+            <span className="text-zinc-400 font-sans text-[11px] font-semibold flex items-center gap-1.5">
+              <span>⏱️</span>
+              <span>Your Turn (15s Shot Clock)</span>
+            </span>
+            <span
+              className={`font-bold font-mono px-2 py-0.2 rounded ${
+                actionTimeRemaining <= 5
+                  ? 'bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse text-xs'
+                  : 'bg-zinc-900 text-amber-300 text-xs'
+              }`}
+            >
+              {actionTimeRemaining}s
+            </span>
+          </div>
+          <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all duration-1000 ${
+                actionTimeRemaining <= 5
+                  ? 'bg-red-500'
+                  : 'bg-gradient-to-r from-amber-500 to-yellow-400'
+              }`}
+              style={{ width: `${Math.max(0, Math.min(100, (actionTimeRemaining / 15) * 100))}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Raise Slider Drawer */}
       {showRaiseSlider && valid.canRaise && (
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
-          className="w-full bg-zinc-950/90 border border-zinc-800 rounded-2xl p-4 shadow-2xl backdrop-blur-md flex flex-col gap-3"
+          className="w-full bg-zinc-950/95 border border-amber-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur-md flex flex-col gap-3"
         >
           {/* Preset Buttons */}
           <div className="grid grid-cols-5 gap-2">
@@ -152,7 +229,7 @@ export const ActionControls: React.FC = () => {
               className="w-full accent-amber-500 cursor-pointer h-2 bg-zinc-800 rounded-lg"
             />
             <span className="font-mono font-bold text-amber-400 text-lg min-w-[70px] text-right">
-              ${raiseAmount}
+              ${formatChips(raiseAmount)}
             </span>
           </div>
 
@@ -161,7 +238,7 @@ export const ActionControls: React.FC = () => {
             onClick={() => handleAction({ type: 'raise', amount: raiseAmount })}
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-zinc-950 font-black text-sm tracking-wide shadow-lg hover:brightness-110"
           >
-            Confirm Raise to ${raiseAmount}
+            Confirm Raise to ${formatChips(raiseAmount)}
           </button>
         </motion.div>
       )}
@@ -192,7 +269,7 @@ export const ActionControls: React.FC = () => {
             onClick={() => handleAction({ type: 'call' })}
             className="flex-1 py-3.5 rounded-2xl bg-zinc-900 border border-blue-500/40 text-blue-400 font-bold text-base shadow-lg hover:bg-blue-950/40 hover:border-blue-500 transition-all disabled:opacity-40 disabled:pointer-events-none"
           >
-            Call ${valid.callAmount}
+            Call ${formatChips(valid.callAmount)}
           </button>
         )}
 

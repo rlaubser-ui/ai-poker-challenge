@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
+import { formatChips } from '@/lib/utils/format';
 
 interface ChipStackProps {
   amount: number;
@@ -37,7 +38,7 @@ export const ChipStack: React.FC<ChipStackProps> = ({
 
       <div className="flex items-baseline gap-1">
         {label && <span className="text-zinc-400 font-sans text-xs">{label}:</span>}
-        <span className="font-bold tracking-tight">{amount.toLocaleString()}</span>
+        <span className="font-bold tracking-tight">{formatChips(amount)}</span>
       </div>
     </motion.div>
   );

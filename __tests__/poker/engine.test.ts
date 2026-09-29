@@ -209,4 +209,44 @@ describe('Poker Engine State Reducer', () => {
     expect(state.winners).toBeDefined();
     expect(state.players[0].chips + state.players[1].chips).toBe(2000);
   });
+
+  it('formats winner descriptions with correct grammar ("You win" vs "The Shark wins")', () => {
+    const youPlayer: Player = {
+      id: 'human',
+      name: 'You',
+      chips: 1000,
+      currentBet: 0,
+      holeCards: [],
+      isFolded: false,
+      isAllIn: false,
+      isAI: false,
+    };
+    const sharkPlayer: Player = {
+      id: 'ai',
+      name: 'The Shark',
+      chips: 1000,
+      currentBet: 0,
+      holeCards: [],
+      isFolded: false,
+      isAllIn: false,
+      isAI: true,
+    };
+
+    // When AI folds preflop, You win
+    const state1 = createInitialGameState({
+      players: [youPlayer, sharkPlayer],
+      dealerIndex: 1, // Shark is dealer
+    });
+    const foldState = applyAction(state1, { type: 'fold' });
+    expect(foldState.winners![0].description).toBe('You win 30 chips (The Shark folded)');
+    expect(foldState.winners![0].description).not.toContain('You wins');
+
+    // When You fold preflop, The Shark wins
+    const state2 = createInitialGameState({
+      players: [youPlayer, sharkPlayer],
+      dealerIndex: 0, // You are dealer
+    });
+    const foldState2 = applyAction(state2, { type: 'fold' });
+    expect(foldState2.winners![0].description).toBe('The Shark wins 30 chips (You folded)');
+  });
 });

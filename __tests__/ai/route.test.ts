@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AIActionResponseSchema } from '@/types/ai';
-import { getFallbackAction } from '@/lib/ai/fallback';
+import { getFallbackAction, sanitizeReason } from '@/lib/ai/fallback';
 import { formatGamePrompt } from '@/lib/ai/formatPrompt';
 import { executeMockAction } from '@/lib/ai/providers/mock';
 import { createInitialGameState, getValidActions } from '@/lib/poker/engine';
@@ -80,6 +80,36 @@ describe('AI Action API Layer', () => {
 
       const fallback = getFallbackAction(state, 'Timeout');
       expect(fallback.action).toBe('fold');
+    });
+
+    it('sanitizes raw Google Gemini 429 quota JSON without leaking raw brackets or URLs', () => {
+      const rawQuotaError = JSON.stringify({
+        error: {
+          code: 429,
+          message:
+            'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.7-flash',
+          status: 'RESOURCE_EXHAUSTED',
+          details: [{ '@type': 'type.googleapis.com/google.rpc.Help' }],
+        },
+      });
+
+      const clean = sanitizeReason(rawQuotaError);
+      expect(clean).not.toContain('{"error"');
+      expect(clean).not.toContain('https://');
+      expect(clean).toContain('Quota Exceeded (429)');
+
+      const state = createInitialGameState({
+        players: createTestPlayers(),
+        dealerIndex: 1,
+      });
+      state.currentBet = 20;
+      state.players[0].currentBet = 20;
+      state.players[1].currentBet = 20;
+
+      const fallback = getFallbackAction(state, rawQuotaError);
+      expect(fallback.thinking).not.toContain('{"error"');
+      expect(fallback.thinking).not.toContain('https://');
+      expect(fallback.thinking).toContain('Rate Limit / Quota Exceeded (429)');
     });
   });
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AIActionResponseSchema, CustomBot } from '@/types/ai';
-import { getFallbackAction } from '@/lib/ai/fallback';
+import { getFallbackAction, sanitizeReason } from '@/lib/ai/fallback';
 import { formatGamePrompt } from '@/lib/ai/formatPrompt';
 import { getPersonaConfig } from '@/lib/ai/personas';
 import { callClaude } from '@/lib/ai/providers/claude';
@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
     const errorMsg =
       err?.name === 'AbortError'
         ? 'AI request timed out (>2.5s)'
-        : err?.message || 'Error communicating with AI model';
+        : sanitizeReason(err?.message || 'Error communicating with AI model');
 
     if (state) {
       return NextResponse.json(getFallbackAction(state, errorMsg));

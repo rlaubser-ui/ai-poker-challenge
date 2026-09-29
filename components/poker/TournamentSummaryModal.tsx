@@ -59,7 +59,7 @@ export const TournamentSummaryModal: React.FC = () => {
         <div className="my-4 px-6 py-2.5 rounded-2xl bg-zinc-900 border border-amber-500/40 shadow-inner flex flex-col items-center">
           <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold">Prize Won</span>
           <span className={`text-2xl font-black font-mono ${prize > 0 ? 'text-emerald-400' : 'text-zinc-500'}`}>
-            {prize > 0 ? `+$${prize}.00` : '$0.00'}
+            {prize > 0 ? `+ZAR ${prize}.00` : 'ZAR 0.00'}
           </span>
         </div>
 
@@ -86,7 +86,7 @@ export const TournamentSummaryModal: React.FC = () => {
                   <span>{elim.name}</span>
                 </div>
                 <span className={elim.prize > 0 ? 'text-emerald-400 font-bold' : 'text-zinc-500'}>
-                  {elim.prize > 0 ? `+$${elim.prize}` : '—'}
+                  {elim.prize > 0 ? `+ZAR ${elim.prize}` : '—'}
                 </span>
               </div>
             ))}

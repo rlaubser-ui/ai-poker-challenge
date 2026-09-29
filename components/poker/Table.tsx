@@ -1,15 +1,16 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { CardView } from './CardView';
 import { ChipStack } from './ChipStack';
 import { PlayerSeat } from './PlayerSeat';
 import { usePokerStore } from '@/store/usePokerStore';
 import { formatChips } from '@/lib/utils/format';
+import { BLIND_STRUCTURE } from '@/types/tournament';
 
 export const Table: React.FC = () => {
-  const { gameState, isAITurn } = usePokerStore();
+  const { gameState, tournament, isAITurn, startNewHand } = usePokerStore();
   const [isOverlayMinimized, setIsOverlayMinimized] = useState(false);
 
   useEffect(() => {
@@ -19,7 +20,9 @@ export const Table: React.FC = () => {
   if (!gameState) {
     return (
       <div className="flex items-center justify-center min-h-[500px]">
-        <div className="text-zinc-500 font-medium animate-pulse">Initializing 7-Max Poker Table...</div>
+        <div className="text-zinc-500 font-medium animate-pulse flex items-center gap-2">
+          <span className="text-purple-400">♠</span> Loading PokerBet Table #3447111...
+        </div>
       </div>
     );
   }
@@ -31,12 +34,12 @@ export const Table: React.FC = () => {
 
   const players = gameState.players;
   const hero = players[0];
-  const seat1 = players[1]; // Viktor "The Shark"
-  const seat2 = players[2]; // Rex "Bulldozer"
-  const seat3 = players[3]; // Larry "Lucky"
-  const seat4 = players[4]; // Pete "Old School"
-  const seat5 = players[5]; // Sophia "GTO"
-  const seat6 = players[6]; // Vince "Vegas"
+  const seat1 = players[1]; // Viktor "The Shark" (Bottom Right)
+  const seat2 = players[2]; // Rex "Bulldozer" (Right Flank)
+  const seat3 = players[3]; // Larry "Lucky" (Top Right)
+  const seat4 = players[4]; // Pete "Old School" (Top Left)
+  const seat5 = players[5]; // Sophia "GTO" (Left Flank)
+  const seat6 = players[6]; // Vince "Vegas" (Bottom Left)
 
   const renderSeat = (playerIndex: number) => {
     const p = players[playerIndex];
@@ -54,49 +57,81 @@ export const Table: React.FC = () => {
   };
 
   return (
-    <div className="relative w-full max-w-5xl mx-auto my-2 px-1 sm:px-2">
-      {/* Outer Casino Table Rail (Wood/Leather Trim) */}
-      <div className="relative w-full rounded-[90px] sm:rounded-[140px] md:rounded-[170px] p-3 sm:p-5 md:p-7 bg-gradient-to-b from-stone-900 via-zinc-950 to-stone-900 border-8 border-stone-800 shadow-[0_20px_60px_rgba(0,0,0,0.95),inset_0_4px_16px_rgba(255,255,255,0.06)]">
-        {/* Inner Green Felt Table Oval */}
-        <div className="relative w-full min-h-[540px] sm:min-h-[590px] md:min-h-[640px] rounded-[75px] sm:rounded-[120px] md:rounded-[150px] bg-gradient-to-b from-emerald-800 via-emerald-900 to-emerald-950 border-4 border-amber-500/20 shadow-[inset_0_0_120px_rgba(0,0,0,0.85)] flex flex-col justify-between items-center py-4 sm:py-6 px-2 sm:px-4 overflow-hidden">
-          {/* Subtle Casino Table Watermark */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-5">
-            <span className="text-9xl font-serif font-black text-amber-300">
-              ♠
-            </span>
+    <div className="relative w-full max-w-5xl mx-auto my-1 px-1 sm:px-2 select-none">
+      {/* Outer Dark Leather / Carbon Table Rail with Subtle Specular Highlight */}
+      <div className="relative w-full rounded-[140px] sm:rounded-[200px] md:rounded-[240px] p-2.5 sm:p-4 md:p-5 bg-gradient-to-b from-[#1c1d2b] via-[#10111a] to-[#181926] border-4 sm:border-[6px] border-[#222436] shadow-[0_25px_60px_rgba(0,0,0,0.95),inset_0_2px_8px_rgba(255,255,255,0.08)]">
+        {/* Inner Dark Navy Oval Felt with Vibrant Neon Purple Rim Glow */}
+        <div className="relative w-full min-h-[500px] sm:min-h-[550px] md:min-h-[580px] rounded-[120px] sm:rounded-[180px] md:rounded-[220px] bg-gradient-to-b from-[#141838] via-[#10142e] to-[#0b0e22] border-2 border-purple-500/30 shadow-[0_0_40px_rgba(139,92,246,0.3),inset_0_0_120px_rgba(0,0,0,0.9)] flex flex-col justify-between items-center py-3 sm:py-5 px-2 sm:px-4 overflow-hidden">
+          
+          {/* Authentic PokerBet Center Felt Watermark */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-[0.06]">
+            <div className="flex items-center gap-2">
+              <span className="text-6xl sm:text-7xl font-black">♠</span>
+              <span className="text-4xl sm:text-5xl font-black tracking-widest uppercase">pokerbet</span>
+            </div>
           </div>
 
           {/* TOP ROW: Pete (Seat 4, Top Left) and Larry (Seat 3, Top Right) */}
-          <div className="w-full flex items-center justify-around z-10 px-4 sm:px-12">
-            {seat4 && <div className="transform -translate-y-1">{renderSeat(4)}</div>}
-            {seat3 && <div className="transform -translate-y-1">{renderSeat(3)}</div>}
+          <div className="w-full flex items-center justify-around z-10 px-4 sm:px-14">
+            {seat4 && (
+              <div className="relative transform -translate-y-1">
+                {renderSeat(4)}
+                {/* Seat 4 Bet Chips placed forward onto felt */}
+                {seat4.currentBet > 0 && (
+                  <div className="absolute left-1/2 -translate-x-1/2 top-28 z-20 pointer-events-none">
+                    <ChipStack amount={seat4.currentBet} size="sm" />
+                  </div>
+                )}
+              </div>
+            )}
+            {seat3 && (
+              <div className="relative transform -translate-y-1">
+                {renderSeat(3)}
+                {/* Seat 3 Bet Chips placed forward onto felt */}
+                {seat3.currentBet > 0 && (
+                  <div className="absolute left-1/2 -translate-x-1/2 top-28 z-20 pointer-events-none">
+                    <ChipStack amount={seat3.currentBet} size="sm" />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* MIDDLE ROW: Sophia (Seat 5, Left), Board & Pots (Center), Rex (Seat 2, Right) */}
           <div className="w-full flex items-center justify-between z-10 px-1 sm:px-3 my-auto">
             {/* Left Flank: Sophia (Seat 5) */}
-            <div className="w-28 sm:w-36 flex justify-start">
-              {seat5 && renderSeat(5)}
+            <div className="relative w-28 sm:w-36 flex justify-start">
+              {seat5 && (
+                <>
+                  {renderSeat(5)}
+                  {seat5.currentBet > 0 && (
+                    <div className="absolute left-28 top-1/2 -translate-y-1/2 z-20 pointer-events-none">
+                      <ChipStack amount={seat5.currentBet} size="sm" />
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
-            {/* Center Area: Main Pot, Side Pots, Community Cards, and Stage Indicator */}
-            <div className="flex flex-col items-center gap-2 sm:gap-3 mx-auto z-10 py-1">
-              {/* Pots Display: Main Pot and Side Pots */}
+            {/* Center Area: PokerBet POT Display, Side Pots, Community Board */}
+            <div className="flex flex-col items-center gap-2 sm:gap-2.5 mx-auto z-10 py-1">
+              {/* PokerBet Pot Readout (POT: 10 500) */}
               <div className="flex items-center gap-2 flex-wrap justify-center">
-                <ChipStack
-                  amount={gameState.pot}
-                  label="POT"
-                  size="lg"
-                  className="bg-zinc-950/90 border-amber-400/70 shadow-2xl"
-                />
+                <div className="px-3.5 py-1 rounded-full bg-black/80 border border-purple-500/40 shadow-xl backdrop-blur-md flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-amber-400 border border-amber-200 shadow-sm" />
+                  <span className="text-xs sm:text-sm font-black tracking-wider text-amber-300 font-mono">
+                    POT: {formatChips(gameState.pot)}
+                  </span>
+                </div>
+
                 {gameState.sidePots && gameState.sidePots.length > 1 && (
                   <div className="flex items-center gap-1">
                     {gameState.sidePots.slice(1).map((sp, idx) => (
                       <span
                         key={sp.id}
-                        className="px-2 py-0.5 rounded-full bg-zinc-900/90 border border-amber-400/40 text-[10px] font-mono font-bold text-amber-300 shadow-md"
+                        className="px-2 py-0.5 rounded-full bg-black/80 border border-purple-400/40 text-[10px] font-mono font-bold text-purple-300 shadow-md"
                       >
-                        Side {idx + 1}: ${sp.amount}
+                        Side {idx + 1}: {formatChips(sp.amount)}
                       </span>
                     ))}
                   </div>
@@ -119,13 +154,13 @@ export const Table: React.FC = () => {
                       />
                     );
                   }
-                  // Empty placeholder card slot
+                  // Empty placeholder card slot matching PokerBet navy felt
                   return (
                     <div
                       key={`empty_${slotIdx}`}
-                      className="w-12 h-18 sm:w-16 sm:h-24 md:w-20 md:h-28 rounded-xl border-2 border-dashed border-emerald-600/30 bg-emerald-950/20 flex items-center justify-center shadow-inner"
+                      className="w-14 h-20 sm:w-16 sm:h-24 md:w-20 md:h-28 rounded-xl border-2 border-dashed border-indigo-500/25 bg-indigo-950/20 flex items-center justify-center shadow-inner"
                     >
-                      <span className="text-emerald-700/40 text-lg sm:text-xl font-serif">
+                      <span className="text-indigo-400/20 text-lg sm:text-xl font-serif">
                         ♠
                       </span>
                     </div>
@@ -134,67 +169,104 @@ export const Table: React.FC = () => {
               </div>
 
               {/* Stage Indicator Badge */}
-              <div className="px-2.5 py-0.5 rounded-full bg-black/50 border border-emerald-400/25 text-[10px] font-black tracking-widest text-emerald-300 uppercase shadow-md">
+              <div className="px-2.5 py-0.5 rounded-full bg-black/60 border border-purple-400/30 text-[10px] font-black tracking-widest text-purple-300 uppercase shadow-md">
                 {gameState.stage}
               </div>
             </div>
 
             {/* Right Flank: Rex (Seat 2) */}
-            <div className="w-28 sm:w-36 flex justify-end">
-              {seat2 && renderSeat(2)}
+            <div className="relative w-28 sm:w-36 flex justify-end">
+              {seat2 && (
+                <>
+                  {renderSeat(2)}
+                  {seat2.currentBet > 0 && (
+                    <div className="absolute right-28 top-1/2 -translate-y-1/2 z-20 pointer-events-none">
+                      <ChipStack amount={seat2.currentBet} size="sm" />
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
 
           {/* LOWER FLANKS ROW: Vince (Seat 6, Bottom Left) and Viktor (Seat 1, Bottom Right) */}
           <div className="w-full flex items-center justify-between z-10 px-4 sm:px-14">
-            {seat6 && renderSeat(6)}
-            {seat1 && renderSeat(1)}
+            {seat6 && (
+              <div className="relative">
+                {renderSeat(6)}
+                {seat6.currentBet > 0 && (
+                  <div className="absolute left-1/2 -translate-x-1/2 -top-12 z-20 pointer-events-none">
+                    <ChipStack amount={seat6.currentBet} size="sm" />
+                  </div>
+                )}
+              </div>
+            )}
+            {seat1 && (
+              <div className="relative">
+                {renderSeat(1)}
+                {seat1.currentBet > 0 && (
+                  <div className="absolute left-1/2 -translate-x-1/2 -top-12 z-20 pointer-events-none">
+                    <ChipStack amount={seat1.currentBet} size="sm" />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* BOTTOM CENTER: Hero Player Seat (Seat 0) */}
-          <div className="z-10 mt-1">
+          <div className="relative z-10 mt-1">
             {renderSeat(0)}
+            {hero && hero.currentBet > 0 && (
+              <div className="absolute left-1/2 -translate-x-1/2 -top-12 z-20 pointer-events-none">
+                <ChipStack amount={hero.currentBet} size="sm" />
+              </div>
+            )}
           </div>
 
           {/* Showdown Result Overlay Banner */}
           {gameState.stage === 'ended' && winner && (
-            isOverlayMinimized ? (
-              <motion.button
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                onClick={() => setIsOverlayMinimized(false)}
-                className="absolute bottom-3 sm:bottom-4 z-30 px-3.5 py-1.5 rounded-full bg-zinc-950/95 border border-amber-400/80 shadow-lg text-amber-300 font-bold text-xs flex items-center gap-2 hover:bg-zinc-900 transition-colors backdrop-blur-md"
-              >
-                <span>🏆</span>
-                <span>{winner.description}</span>
-                <span className="text-[10px] text-zinc-300 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/40 font-semibold">
-                  👁️ Show Result
-                </span>
-              </motion.button>
-            ) : (
-              <motion.div
-                initial={{ scale: 0.85, opacity: 0, y: 10 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                className="absolute inset-x-4 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center bg-zinc-950/95 border-2 border-amber-400/80 rounded-2xl p-4 shadow-[0_0_50px_rgba(212,175,55,0.35)] backdrop-blur-lg max-w-sm mx-auto text-center"
-              >
-                <button
-                  onClick={() => setIsOverlayMinimized(true)}
-                  className="absolute top-2.5 right-2.5 text-[11px] text-zinc-400 hover:text-amber-300 px-2 py-0.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-800 transition-colors flex items-center gap-1 font-sans border border-zinc-700/60"
-                  title="Minimize banner to inspect cards"
+            <AnimatePresence>
+              {!isOverlayMinimized ? (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 15 }}
+                  className="absolute inset-x-8 top-1/3 z-30 flex flex-col items-center justify-center p-4 rounded-2xl bg-zinc-950/95 border-2 border-amber-400 shadow-[0_0_50px_rgba(251,191,36,0.3)] backdrop-blur-xl text-center max-w-md mx-auto"
                 >
-                  <span>👁️</span> Peek Cards
-                </button>
-                <div className="text-3xl mb-1 mt-0.5">
-                  🏆
-                </div>
-                <h3 className="text-lg font-black text-amber-300 tracking-tight px-4 leading-snug">
-                  {winner.description}
-                </h3>
-                <p className="text-zinc-300 font-mono text-xs mt-1">
-                  Awarded <span className="text-amber-400 font-bold">${formatChips(winner.amount)}</span> chips
-                </p>
-              </motion.div>
-            )
+                  <button
+                    onClick={() => setIsOverlayMinimized(true)}
+                    className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 text-xs flex items-center gap-1 font-mono transition-colors"
+                  >
+                    <span>👁️</span> Peek Cards
+                  </button>
+
+                  <div className="text-2xl mb-1">🏆</div>
+                  <h3 className="text-base sm:text-lg font-black text-amber-300 tracking-wide">
+                    {players.find((p) => p.id === winner.playerId)?.name || 'Player'} wins with {winner.description}
+                  </h3>
+                  <p className="text-xs text-zinc-300 font-mono mt-1">
+                    Awarded <span className="font-bold text-amber-400">{formatChips(winner.amount)}</span> chips
+                  </p>
+
+                  <button
+                    onClick={() => startNewHand()}
+                    className="mt-3 px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-zinc-950 font-black text-xs hover:brightness-110 shadow-lg transition-all"
+                  >
+                    Deal Next Hand ➔
+                  </button>
+                </motion.div>
+              ) : (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  onClick={() => setIsOverlayMinimized(false)}
+                  className="absolute top-4 right-4 z-30 px-3 py-1.5 rounded-full bg-amber-500/20 border border-amber-400 text-amber-300 font-bold text-xs flex items-center gap-1.5 backdrop-blur-md shadow-lg hover:bg-amber-500/30 transition-all"
+                >
+                  <span>🏆 Showdown:</span>
+                  <span>{players.find((p) => p.id === winner.playerId)?.name || 'Player'} ({winner.description})</span>
+                </motion.button>
+              )}
+            </AnimatePresence>
           )}
         </div>
       </div>

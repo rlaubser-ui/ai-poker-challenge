@@ -92,11 +92,12 @@ interface PokerStoreState {
   updateSettings: (newSettings: Partial<UserSettings>) => void;
   clearBanter: () => void;
   restartTournament: () => void;
+  registerForTournament: () => void;
 }
 
 const INITIAL_TOURNAMENT_STATE: TournamentState = {
-  id: 'sng_turbo_7max',
-  name: '$10 Turbo Sit & Go [7-Max]',
+  id: 'sng_zar_turbo_7max',
+  name: 'ZAR 70 GTD | (7 Seater Turbo SNG)',
   buyIn: 10,
   startingChips: 1000,
   totalPlayers: 7,
@@ -105,6 +106,9 @@ const INITIAL_TOURNAMENT_STATE: TournamentState = {
   isPaused: false,
   isComplete: false,
   prizePool: 70,
+  currency: 'ZAR',
+  buyInDisplay: 'ZAR 9 + ZAR 1',
+  isRegistered: false,
   payouts: SNG_7MAX_PAYOUTS,
   eliminations: [],
   handNumber: 1,
@@ -346,6 +350,9 @@ export const usePokerStore = create<PokerStoreState>()(
         settings: {
           reasoningVisibility: 'showdown',
           isSoundMuted: false,
+          cardFaceTheme: 'four-color',
+          cardBackTheme: 'pokerbet-magenta',
+          userBalance: 1000,
           apiKeys: {},
         },
         handsPlayed: 0,
@@ -369,7 +376,7 @@ export const usePokerStore = create<PokerStoreState>()(
             id: `welcome_${Date.now()}`,
             sender: 'Dealer',
             avatar: '♠️',
-            text: 'Welcome to the $10 Turbo Sit & Go (7-Max)! Starting stack: 1,000 chips. 3-minute blind levels.',
+            text: 'Welcome to the ZAR 70 GTD | (7 Seater Turbo SNG)! Starting stack: 1,000 chips. 3-minute turbo blind levels.',
             isAI: false,
             timestamp: Date.now(),
           };
@@ -602,6 +609,17 @@ export const usePokerStore = create<PokerStoreState>()(
         restartTournament: () => {
           get().initTournament();
         },
+
+        registerForTournament: () => {
+          const { tournament, settings, initTournament } = get();
+          const currentBal = settings.userBalance ?? 1000;
+          const newBal = Math.max(0, currentBal - tournament.buyIn);
+          set((prev) => ({
+            settings: { ...prev.settings, userBalance: newBal },
+            tournament: { ...prev.tournament, isRegistered: true },
+          }));
+          initTournament();
+        },
       };
     },
     {
@@ -609,6 +627,8 @@ export const usePokerStore = create<PokerStoreState>()(
       partialize: (state) => ({
         settings: state.settings,
         stats: state.stats,
+        tournament: state.tournament,
+        customBots: state.customBots,
       }),
     }
   )

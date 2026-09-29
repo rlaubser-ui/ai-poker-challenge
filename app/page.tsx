@@ -1,116 +1,112 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { ActionControls } from '@/components/poker/ActionControls';
-import { BanterBox } from '@/components/poker/BanterBox';
-import { SettingsModal } from '@/components/poker/SettingsModal';
-import { Table } from '@/components/poker/Table';
-import { TournamentHeader } from '@/components/poker/TournamentHeader';
-import { TournamentSummaryModal } from '@/components/poker/TournamentSummaryModal';
+import React, { useState } from 'react';
+import { LobbyHeader } from '@/components/lobby/LobbyHeader';
+import { TournamentList } from '@/components/lobby/TournamentList';
+import { TournamentLobbyModal } from '@/components/lobby/TournamentLobbyModal';
 import { usePokerStore } from '@/store/usePokerStore';
 
-export default function PokerArenaPage() {
-  const {
-    gameState,
-    initTournament,
-    tournament,
-    handsPlayed,
-    stats,
-    settings,
-    updateSettings,
-    restartTournament,
-  } = usePokerStore();
+export default function LobbyPage() {
+  const [isLobbyModalOpen, setIsLobbyModalOpen] = useState(false);
+  const { tournament } = usePokerStore();
 
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const launchTableWindow = () => {
+    if (typeof window === 'undefined') return;
 
-  useEffect(() => {
-    if (!gameState) {
-      initTournament();
+    const width = 1280;
+    const height = 820;
+    const left = window.screen.width ? Math.max(0, (window.screen.width - width) / 2) : 100;
+    const top = window.screen.height ? Math.max(0, (window.screen.height - height) / 2) : 50;
+
+    const popup = window.open(
+      '/table',
+      'PokerBetTableWindow',
+      `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes`
+    );
+
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+      // If browser blocked popup window, navigate to /table in same window
+      window.location.href = '/table';
+    } else {
+      popup.focus();
     }
-  }, [gameState, initTournament]);
+  };
 
   return (
-    <main className="flex flex-col min-h-screen bg-radial-gradient from-zinc-900 to-zinc-950 px-2 sm:px-4 py-2 sm:py-3">
-      {/* Top Header Navigation */}
-      <header className="flex flex-wrap items-center justify-between gap-3 w-full max-w-5xl mx-auto pb-2 border-b border-zinc-800/80">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-600 to-yellow-400 p-0.5 shadow-md flex items-center justify-center">
-            <span className="text-zinc-950 font-black text-sm">♠</span>
-          </div>
+    <div className="min-h-screen bg-[#070913] text-zinc-100 flex flex-col justify-between font-sans select-none">
+      {/* 1. PokerBet Desktop Client Header */}
+      <LobbyHeader />
+
+      {/* 2. Main Lobby Tournament Listings & SNG Browser */}
+      <main className="flex-1 flex flex-col max-w-7xl w-full mx-auto p-2 sm:p-4">
+        {/* Quick Hero Banner */}
+        <div className="mb-3 p-4 rounded-2xl bg-gradient-to-r from-[#171b3e] via-[#15122e] to-[#251036] border border-purple-500/30 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="font-extrabold text-base sm:text-xl tracking-tight bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-500 bg-clip-text text-transparent">
-              AI Poker Challenge
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-black uppercase tracking-wider">
+                Live Challenge
+              </span>
+              <span className="text-zinc-400 text-xs">7-Max Turbo Sit &amp; Go</span>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-black text-zinc-100 tracking-tight">
+              Challenge 6 Distinct AI Personas in Turbo Hold&apos;em
             </h1>
-            <span className="text-[10px] text-zinc-400 font-mono hidden sm:inline-block">
-              Turbo Sit & Go Series • 7-Max
-            </span>
+            <p className="text-zinc-400 text-xs mt-1 max-w-xl">
+              Buy in for ZAR 10, compete for the ZAR 70 prize pool, survive 3-minute turbo blind increases, and review opponent mucked cards in real time.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsLobbyModalOpen(true)}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 hover:brightness-110 active:scale-95 text-white font-extrabold text-xs shadow-lg shadow-purple-950/50 transition-all flex items-center gap-2"
+            >
+              <span>{tournament.isRegistered ? 'Table Ready ➔' : 'View Tournament Lobby'}</span>
+              <span>➔</span>
+            </button>
+            <button
+              onClick={launchTableWindow}
+              className="px-4 py-2.5 rounded-xl bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200 font-bold text-xs border border-zinc-700 transition-colors flex items-center gap-1.5"
+              title="Launch Pop-out Table Window directly"
+            >
+              <span>🪟</span>
+              <span>Pop-out Table</span>
+            </button>
           </div>
         </div>
 
-        {/* Tournament Stats & Settings */}
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          {/* Trophies & Record */}
-          <div className="flex items-center gap-2 bg-zinc-900/80 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs font-mono">
-            <span className="text-amber-400 font-bold flex items-center gap-1">
-              🏆 {stats.firstPlaceFinishes || 0}
-            </span>
-            <span className="text-zinc-600">|</span>
-            <span className="text-emerald-400 font-bold">{stats.humanWins}W</span>
-            <span className="text-zinc-600">-</span>
-            <span className="text-red-400 font-bold">{stats.aiWins}L</span>
-            <span className="text-zinc-500 ml-1 hidden md:inline">({handsPlayed} hands)</span>
-          </div>
-
-          {/* Quick Restart Tournament Button */}
-          <button
-            onClick={() => {
-              if (confirm('Restart current tournament with 1,000 starting chips?')) {
-                restartTournament();
-              }
-            }}
-            className="px-2.5 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700/60 hover:bg-zinc-800 text-zinc-300 hover:text-amber-400 text-xs font-semibold transition-all shadow-sm flex items-center gap-1"
-            title="Restart Tournament"
-          >
-            <span>🔄</span>
-            <span className="hidden sm:inline">New SNG</span>
-          </button>
-
-          {/* Settings Modal Button */}
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className="p-2 rounded-xl bg-zinc-900/90 border border-zinc-700/60 hover:bg-zinc-800 text-zinc-300 hover:text-amber-400 transition-colors shadow-sm text-xs"
-            title="Settings & Audio"
-          >
-            ⚙️
-          </button>
+        {/* 3. Sit & Go Tournament Browser Grid */}
+        <div className="flex-1 rounded-2xl border border-zinc-800 bg-[#0c0e1e] overflow-hidden shadow-2xl flex flex-col">
+          <TournamentList
+            onOpenTournamentLobby={() => setIsLobbyModalOpen(true)}
+            onLaunchTable={launchTableWindow}
+          />
         </div>
-      </header>
+      </main>
 
-      {/* Main Tournament Arena */}
-      <section className="flex-1 flex flex-col justify-center items-center py-1 sm:py-2 w-full max-w-5xl mx-auto">
-        {/* Tournament HUD / Header with 3-minute Turbo Blind Clock */}
-        <TournamentHeader />
-
-        {/* 7-Max Stadium Poker Table */}
-        <Table />
-
-        {/* Player Betting Action Controls */}
-        <ActionControls />
-
-        {/* Live Banter & Dialogue History */}
-        <div className="w-full mt-2">
-          <BanterBox />
+      {/* 4. Desktop Client Bottom Status Bar */}
+      <footer className="w-full bg-[#0a0c18] border-t border-zinc-900 px-4 py-2 flex flex-wrap items-center justify-between text-xs text-zinc-500 font-mono">
+        <div className="flex items-center gap-3">
+          <span>● Server Online (38ms)</span>
+          <span>•</span>
+          <span>Version 1.4.0-sng</span>
+          <span>•</span>
+          <span>Currencies: ZAR</span>
         </div>
-      </section>
+        <div className="flex items-center gap-4">
+          <a href="/table" className="text-purple-400 hover:text-purple-300 font-bold">
+            Direct Table Link
+          </a>
+          <span>Responsible Gaming 18+</span>
+        </div>
+      </footer>
 
-      {/* Tournament Finish / Elimination Summary Modal */}
-      <TournamentSummaryModal />
-
-      {/* Settings Modal Dialog */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+      {/* 5. Tournament Lobby Window (Modal View with 6 Waiting AI Opponents) */}
+      <TournamentLobbyModal
+        isOpen={isLobbyModalOpen}
+        onClose={() => setIsLobbyModalOpen(false)}
+        onLaunchTable={launchTableWindow}
       />
-    </main>
+    </div>
   );
 }

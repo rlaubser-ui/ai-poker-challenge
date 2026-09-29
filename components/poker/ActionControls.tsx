@@ -229,7 +229,7 @@ export const ActionControls: React.FC = () => {
               className="w-full accent-amber-500 cursor-pointer h-2 bg-zinc-800 rounded-lg"
             />
             <span className="font-mono font-bold text-amber-400 text-lg min-w-[70px] text-right">
-              ${formatChips(raiseAmount)}
+              {formatChips(raiseAmount)}
             </span>
           </div>
 
@@ -238,7 +238,7 @@ export const ActionControls: React.FC = () => {
             onClick={() => handleAction({ type: 'raise', amount: raiseAmount })}
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-zinc-950 font-black text-sm tracking-wide shadow-lg hover:brightness-110"
           >
-            Confirm Raise to ${formatChips(raiseAmount)}
+            Confirm Raise to {formatChips(raiseAmount)}
           </button>
         </motion.div>
       )}
@@ -269,7 +269,7 @@ export const ActionControls: React.FC = () => {
             onClick={() => handleAction({ type: 'call' })}
             className="flex-1 py-3.5 rounded-2xl bg-zinc-900 border border-blue-500/40 text-blue-400 font-bold text-base shadow-lg hover:bg-blue-950/40 hover:border-blue-500 transition-all disabled:opacity-40 disabled:pointer-events-none"
           >
-            Call ${formatChips(valid.callAmount)}
+            Call {formatChips(valid.callAmount)}
           </button>
         )}
 

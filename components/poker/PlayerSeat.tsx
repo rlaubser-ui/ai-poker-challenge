@@ -50,9 +50,22 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = ({
   const isRevealed = isHuman || revealHoleCards || isFolded;
   const isHidden = !isRevealed;
 
+  // Calculate circular timer ring for active turn
+  const timerRadius = 18;
+  const timerCircumference = 2 * Math.PI * timerRadius;
+  const timerPercent = isHuman ? Math.max(0, actionTimeRemaining / 15) : 1;
+  const strokeDashoffset = timerCircumference - (timerPercent * timerCircumference);
+
+  const timerColor =
+    actionTimeRemaining <= 5
+      ? 'stroke-red-500'
+      : actionTimeRemaining <= 9
+      ? 'stroke-amber-400'
+      : 'stroke-emerald-400';
+
   return (
-    <div className={`flex flex-col items-center relative transition-opacity duration-300 ${isEliminated ? 'opacity-40 grayscale' : 'opacity-100'}`}>
-      {/* 15-Second Action Countdown Timer for Hero */}
+    <div className={`flex flex-col items-center relative transition-opacity duration-300 ${isEliminated ? 'opacity-35 grayscale' : 'opacity-100'}`}>
+      {/* 15-Second Action Countdown Readout for Hero */}
       {isActive && isHuman && (
         <motion.div
           initial={{ scale: 0.8, opacity: 0, y: -4 }}
@@ -68,38 +81,26 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = ({
         </motion.div>
       )}
 
-      {/* AI Thinking Timer Badge */}
+      {/* AI Thinking Indicator */}
       {isActive && !isHuman && (
         <motion.div
           initial={{ scale: 0.8, opacity: 0, y: -4 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
-          className="absolute -top-7 z-30 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-zinc-950/90 border border-amber-500/50 text-amber-300 font-mono text-[10px] font-bold shadow-md"
+          className="absolute -top-7 z-30 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-zinc-950/95 border border-purple-500/60 text-purple-300 font-mono text-[10px] font-bold shadow-md shadow-purple-950/50"
         >
-          <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+          <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping" />
           <span>Thinking...</span>
         </motion.div>
       )}
 
-      {/* Current Street Bet on Table */}
-      {player.currentBet > 0 && (
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0, y: isHuman ? -12 : 12 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          className={`absolute ${isHuman ? '-top-10' : '-bottom-10'} z-20 pointer-events-none`}
-        >
-          <ChipStack amount={player.currentBet} size="sm" />
-        </motion.div>
-      )}
-
-      {/* Action Badge Announcement (e.g. RAISE 80, CALL, CHECK, FOLD) */}
+      {/* Action Announcement Bubble (e.g. RAISE 80, CALL, CHECK, FOLD) */}
       {player.lastAction && !isEliminated && !isActive && (
         <motion.div
           initial={{ scale: 0.7, opacity: 0, y: isHuman ? 10 : -10 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.8, opacity: 0 }}
-          className={`absolute ${isHuman ? '-bottom-7' : '-top-7'} z-30 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase shadow-lg border backdrop-blur-md ${
+          className={`absolute ${isHuman ? '-bottom-7' : '-top-7'} z-30 px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase shadow-lg border backdrop-blur-md ${
             player.lastAction.type === 'raise'
-              ? 'bg-amber-500 text-zinc-950 border-amber-300'
+              ? 'bg-amber-500 text-zinc-950 border-amber-300 shadow-amber-500/20'
               : player.lastAction.type === 'fold'
               ? 'bg-red-900/90 text-red-200 border-red-500/40'
               : player.lastAction.type === 'call'
@@ -114,7 +115,7 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = ({
       {/* Folded Cards Readout Badge */}
       {isFolded && player.holeCards.length === 2 && (
         <div className="text-[10px] font-black text-red-300 bg-red-950/95 border border-red-500/50 px-2 py-0.5 rounded-full shadow-lg z-20 mb-1 flex items-center gap-1 backdrop-blur-sm animate-fade-in">
-          <span className="text-zinc-400 uppercase text-[9px]">Mucked</span>
+          <span className="text-zinc-400 uppercase text-[8px]">Mucked</span>
           <span className="font-mono text-zinc-100 font-bold">
             {player.holeCards.map((c) => `${c.rank}${SUIT_SYMBOLS[c.suit] || c.suit}`).join(' ')}
           </span>
@@ -123,74 +124,89 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = ({
 
       {/* Hole Cards */}
       <div className="flex items-center -space-x-4 sm:-space-x-5 z-10 mb-1">
-        {player.holeCards.map((card, idx) => {
-          return (
-            <motion.div
-              key={`${card.rank}${card.suit}_${idx}`}
-              initial={{ rotate: idx === 0 ? -6 : 6 }}
-              animate={{
-                rotate: isFolded ? (idx === 0 ? -12 : 12) : (idx === 0 ? -4 : 4),
-                y: isActive ? [0, -3, 0] : 0,
-              }}
-              transition={{
-                y: { repeat: isActive ? Infinity : 0, duration: 1.8 },
-              }}
-              className={`transition-all ${isFolded ? 'opacity-85 brightness-95 grayscale-[15%]' : 'opacity-100'}`}
-            >
-              <CardView
-                card={card}
-                hidden={isHidden}
-                highlight={isWinningCard(card)}
-                className={isFolded ? 'border-red-500/50 ring-1 ring-red-500/30' : ''}
-              />
-            </motion.div>
-          );
-        })}
+        {player.holeCards.map((card, idx) => (
+          <motion.div
+            key={`${card.rank}${card.suit}_${idx}`}
+            initial={{ rotate: idx === 0 ? -6 : 6 }}
+            animate={{
+              rotate: isFolded ? (idx === 0 ? -12 : 12) : (idx === 0 ? -4 : 4),
+              y: isActive ? [0, -3, 0] : 0,
+            }}
+            transition={{
+              y: { repeat: isActive ? Infinity : 0, duration: 1.8 },
+            }}
+            className={`transition-all ${isFolded ? 'opacity-80 brightness-95 grayscale-[20%]' : 'opacity-100'}`}
+          >
+            <CardView
+              card={card}
+              hidden={isHidden}
+              highlight={isWinningCard(card)}
+              className={isFolded ? 'border-red-500/50 ring-1 ring-red-500/30' : ''}
+            />
+          </motion.div>
+        ))}
       </div>
 
-      {/* Seat Badge & Info */}
+      {/* PokerBet Sleek Capsule Pill Seat */}
       <motion.div
         animate={{
           scale: isActive ? 1.04 : 1,
         }}
-        className={`relative flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl border backdrop-blur-md shadow-2xl transition-all ${
+        className={`relative flex items-center gap-2 pl-1 pr-3 py-1 rounded-full border backdrop-blur-md shadow-2xl transition-all ${
           isActive
-            ? 'border-yellow-400 bg-zinc-900/95 ring-2 sm:ring-4 ring-yellow-400/40 shadow-[0_0_20px_rgba(250,204,21,0.3)]'
+            ? 'border-purple-400 bg-zinc-950/95 ring-2 sm:ring-4 ring-purple-500/40 shadow-[0_0_25px_rgba(168,85,247,0.4)]'
             : isEliminated
             ? 'border-zinc-800 bg-zinc-950/60'
-            : 'border-zinc-700/70 bg-zinc-950/85 hover:border-zinc-600'
+            : 'border-zinc-700/60 bg-zinc-950/85 hover:border-zinc-600'
         }`}
       >
-        {/* Active Turn Pulsing Border Indicator */}
-        {isActive && (
-          <div className="absolute inset-0 rounded-xl border-2 border-yellow-400 animate-ping opacity-30 pointer-events-none" />
-        )}
-
-        {/* Dealer Button */}
+        {/* Dealer Button - PokerBet 3D Gold Disc */}
         {isDealer && !isEliminated && (
-          <div className="absolute -top-2.5 -right-2.5 w-6 h-6 rounded-full bg-amber-400 border border-white shadow-md flex items-center justify-center text-zinc-950 font-black text-[11px] z-20">
+          <div className="absolute -top-3 -right-2.5 w-6 h-6 rounded-full bg-gradient-to-b from-amber-300 via-amber-400 to-yellow-600 border-2 border-amber-100 shadow-[0_4px_8px_rgba(0,0,0,0.8)] flex items-center justify-center text-zinc-950 font-black text-[11px] z-30">
             D
           </div>
         )}
 
-        {/* Avatar */}
-        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-amber-600 to-yellow-400 p-0.5 shadow-md flex items-center justify-center shrink-0 text-base sm:text-lg">
-          <div className="w-full h-full rounded-full bg-zinc-900 flex items-center justify-center overflow-hidden">
-            {isHuman ? '🤠' : (player.avatar || '🤖')}
+        {/* Circular Avatar with Action Timer Ring */}
+        <div className="relative w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center">
+          {/* SVG Timer Ring */}
+          {isActive && (
+            <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none">
+              <circle
+                cx="50%"
+                cy="50%"
+                r={timerRadius}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                className="text-zinc-800"
+              />
+              <circle
+                cx="50%"
+                cy="50%"
+                r={timerRadius}
+                fill="none"
+                strokeWidth="2.5"
+                strokeDasharray={timerCircumference}
+                strokeDashoffset={strokeDashoffset}
+                strokeLinecap="round"
+                className={`${timerColor} transition-all duration-300`}
+              />
+            </svg>
+          )}
+
+          {/* Avatar Disc */}
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-purple-900 to-indigo-950 border border-purple-500/40 p-0.5 shadow-md flex items-center justify-center overflow-hidden text-base">
+            <span>{isHuman ? '🤠' : (player.avatar || '🤖')}</span>
           </div>
         </div>
 
         {/* Player Name and Chip Count */}
-        <div className="flex flex-col min-w-[70px] sm:min-w-[85px] leading-tight">
+        <div className="flex flex-col min-w-[75px] sm:min-w-[90px] leading-tight text-left">
           <div className="flex items-center gap-1">
-            <span className="font-bold text-xs text-zinc-100 truncate max-w-[70px] sm:max-w-[85px]">
+            <span className="font-extrabold text-xs text-zinc-100 truncate max-w-[70px] sm:max-w-[85px]">
               {player.name}
             </span>
-            {player.style && !isHuman && (
-              <span className="hidden sm:inline-block text-[8px] font-semibold text-amber-300/90 bg-amber-950/60 px-1 py-0.2 rounded border border-amber-500/20">
-                {player.style}
-              </span>
-            )}
           </div>
 
           <div className="flex items-center gap-1 mt-0.5">
@@ -204,12 +220,12 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = ({
                   {formatChips(player.chips)}
                 </span>
                 {player.isFolded && (
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-red-400 bg-red-950/80 px-1 py-0.2 rounded">
+                  <span className="text-[8px] font-bold uppercase tracking-wider text-red-400 bg-red-950/80 px-1 py-0.2 rounded border border-red-500/30">
                     Fold
                   </span>
                 )}
                 {player.isAllIn && (
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-amber-400 bg-amber-950/80 px-1 py-0.2 rounded">
+                  <span className="text-[8px] font-bold uppercase tracking-wider text-amber-400 bg-amber-950/80 px-1 py-0.2 rounded border border-amber-500/30">
                     All-In
                   </span>
                 )}
@@ -217,6 +233,14 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = ({
             )}
           </div>
         </div>
+
+        {/* Note / Info Icon (PokerBet style '+' pill) */}
+        <button
+          className="w-4 h-4 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 flex items-center justify-center text-[10px] font-bold transition-colors ml-0.5"
+          title={`${player.name} - ${player.style || 'Player'}`}
+        >
+          +
+        </button>
       </motion.div>
     </div>
   );

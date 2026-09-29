@@ -58,4 +58,7 @@ export interface TournamentState {
   eliminations: TournamentElimination[];
   winner?: Player;
   handNumber: number;
+  currency?: string;
+  buyInDisplay?: string;
+  isRegistered?: boolean;
 }
